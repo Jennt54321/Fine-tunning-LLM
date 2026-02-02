@@ -1,0 +1,24 @@
+# Predict-only: run on GSM8K test set and save predictions for evaluation.
+# Usage: llamafactory-cli train m3_eval.yaml
+# Then run: python evaluate_gsm8k.py outputs/gsm8k_qwen_m3_eval
+
+model_name_or_path: Qwen/Qwen2.5-3B-Instruct
+adapter_name_or_path: outputs/gsm8k_qwen_m3
+template: qwen
+
+stage: sft
+do_train: false
+do_predict: true
+finetuning_type: lora
+
+dataset_dir: data/custom
+eval_dataset: gsm8k_mac_test
+cutoff_len: 512
+predict_with_generate: true
+
+output_dir: outputs/gsm8k_qwen_m3_eval
+overwrite_output_dir: true
+report_to: none
+
+per_device_eval_batch_size: 1
+bf16: true

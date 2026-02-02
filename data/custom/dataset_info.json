@@ -1,0 +1,38 @@
+{
+  "gsm8k_mac": {
+    "file_name": "gsm8k_alpaca_train.jsonl",
+    "formatting": "alpaca",
+    "columns": {
+      "prompt": "instruction",
+      "query": "input",
+      "response": "output"
+    }
+  },
+  "gsm8k_mac_test": {
+    "file_name": "gsm8k_alpaca_test.jsonl",
+    "formatting": "alpaca",
+    "columns": {
+      "prompt": "instruction",
+      "query": "input",
+      "response": "output"
+    }
+  },
+  "gsm8k_socratic_mac": {
+    "file_name": "gsm8k_socratic_alpaca_train.jsonl",
+    "formatting": "alpaca",
+    "columns": {
+      "prompt": "instruction",
+      "query": "input",
+      "response": "output"
+    }
+  },
+  "gsm8k_socratic_mac_test": {
+    "file_name": "gsm8k_socratic_alpaca_test.jsonl",
+    "formatting": "alpaca",
+    "columns": {
+      "prompt": "instruction",
+      "query": "input",
+      "response": "output"
+    }
+  }
+}

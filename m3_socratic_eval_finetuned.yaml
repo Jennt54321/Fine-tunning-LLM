@@ -1,0 +1,26 @@
+# 評估「Fine-tuned」條件：載入 socratic 微調後的 adapter，在 gsm8k_socratic test 上 predict
+# 執行: llamafactory-cli train m3_socratic_eval_finetuned.yaml
+# 之後: python evaluate_gsm8k.py outputs/gsm8k_socratic_qwen_m3_eval_finetuned
+
+model_name_or_path: Qwen/Qwen2.5-3B-Instruct
+adapter_name_or_path: outputs/gsm8k_socratic_qwen_m3
+template: qwen
+
+stage: sft
+do_train: false
+do_predict: true
+finetuning_type: lora
+
+dataset_dir: data/custom
+eval_dataset: gsm8k_socratic_mac_test
+cutoff_len: 512
+# max_samples: 50   # 快速試跑可取消註解
+predict_with_generate: true
+do_sample: false   # 貪婪解碼，避免 MPS 上採樣出現 inf/nan
+
+output_dir: outputs/gsm8k_socratic_qwen_m3_eval_finetuned
+overwrite_output_dir: true
+report_to: none
+
+per_device_eval_batch_size: 1
+bf16: true

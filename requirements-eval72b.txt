@@ -1,0 +1,10 @@
+# Extra deps for evaluate_with_qwen72b.py (Qwen2.5-72B as evaluator)
+# Base: transformers, torch (from LLaMA-Factory / venv)
+transformers>=4.37.0
+torch
+# 4-bit / 8-bit (transformers backend):
+bitsandbytes
+
+# Optional, Apple Silicon only (--backend mlx):
+# mlx
+# mlx-lm
