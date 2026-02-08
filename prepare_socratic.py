@@ -3,7 +3,7 @@
 準備 GSM8K socratic 子集給 LLaMA-Factory 訓練與評估。
 
 - Dataset: openai/gsm8k, subset = socratic
-- Instruction（研究用 prompt）與 evaluate_with_qwen72b.py 的 SOCRATIC_SYSTEM 對齊：
+- Instruction（研究用 prompt）與 evaluate_with_qwen14b.py 的 SOCRATIC_SYSTEM 對齊：
   問句以 ? 結尾，每句後用「 ** 」接該問的答案與推理，最後答案放在 #### 後。
 - 輸出 Alpaca 格式 jsonl，並更新 data/custom/dataset_info.json。
 """
@@ -12,11 +12,14 @@ import os
 from datasets import load_dataset
 from tqdm import tqdm
 
-# 與 Socratic Score 的 system prompt 對齊：要求「問句? ** 該問的答案與推理」，最後答案放 ####
+# 與 Socratic Format Adherence 對齊：Question? ** Answer with <<expr=result>>，每步一行，#### 結尾
 SOCRATIC_INSTRUCTION = (
-    "Use socratic questions to guide through the problem. End each guiding question with '?'. "
-    "After each question, write ' ** ' then the answer and reasoning for that question "
-    "(e.g. 'How many eggs? ** She sells 16-3-4=9 eggs.'). Put the final answer after ####."
+    "Use socratic questions to guide through the problem. "
+    "Format: each step on its own line as 'Question? ** Answer with <<expr=result>>'. "
+    "End each guiding question with '?'. After each question, write ' ** ' then the answer and reasoning. "
+    "For numerical computations, use <<expression=result>> (e.g. <<16-3-4=9>>). "
+    "Put one Q&A pair per line. Put the final answer after ####. "
+    "Example: How many eggs does she sell? ** She sells 16-3-4=<<16-3-4=9>>9 eggs.\nHow much does she make? ** She makes 9*2=<<9*2=18>>18.\n#### 18"
 )
 
 
