@@ -1,6 +1,7 @@
 # Predict-only: run on GSM8K test set and save predictions for evaluation.
 # Usage: llamafactory-cli train m3_eval.yaml
 # Then run: python evaluate_gsm8k.py outputs/gsm8k_qwen_m3_eval
+# 評估四項指標：Reasoning、Guidance Density、Socratic Format Adherence；Guidance Quality 請用 evaluate_with_qwen14b.py
 
 model_name_or_path: Qwen/Qwen2.5-3B-Instruct
 adapter_name_or_path: outputs/gsm8k_qwen_m3

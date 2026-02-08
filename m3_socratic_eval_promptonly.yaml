@@ -2,6 +2,7 @@
 # 同樣在 gsm8k_socratic test 上、相同 prompt（instruction 在資料裡）做 predict
 # 執行: llamafactory-cli train m3_socratic_eval_promptonly.yaml
 # 之後: python evaluate_gsm8k.py outputs/gsm8k_socratic_qwen_m3_eval_promptonly
+#       python evaluate_with_qwen14b.py outputs/gsm8k_socratic_qwen_m3_eval_promptonly  # Guidance Quality (Socratic Score)
 
 model_name_or_path: Qwen/Qwen2.5-3B-Instruct
 # 不設定 adapter_name_or_path → 使用 base 模型

@@ -1,0 +1,6 @@
+model_name_or_path: Qwen/Qwen2.5-3B-Instruct
+adapter_name_or_path: outputs/gsm8k_socratic_qwen_m3
+template: qwen
+infer_backend: huggingface
+trust_remote_code: true
+default_system: "Use socratic questions to guide through the problem. End each guiding question with '?'. After each question, write ' ** ' then the answer and reasoning for that question (e.g. 'How many eggs? ** She sells 16-3-4=9 eggs.'). Put the final answer after ####."
