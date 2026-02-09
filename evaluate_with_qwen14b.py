@@ -414,6 +414,9 @@ def main():
             output_json = os.path.join(p, "eval_full_results.json")
         elif os.path.isfile(p):
             output_json = os.path.join(os.path.dirname(p), "eval_full_results.json")
+        else:
+            # Path may not exist yet; treat as dir path for output
+            output_json = os.path.normpath(os.path.join(p, "eval_full_results.json"))
     run_eval(
         args.path,
         model_id=args.model,
