@@ -1,5 +1,5 @@
 model_name_or_path: Qwen/Qwen2.5-3B-Instruct
-adapter_name_or_path: outputs/gsm8k_socratic_qwen_m3
+adapter_name_or_path: outputs/gsm8k_socratic_qwen
 template: qwen
 infer_backend: huggingface
 trust_remote_code: true

@@ -2,9 +2,9 @@
 
 依你目前架構（LlamaFactory + `openai/gsm8k` socratic + Qwen2.5-3B-Instruct，M3 Mac 本機），已完成：
 
-- **資料**：`prepare_socratic.py` 下載 socratic 子集，轉成 Alpaca，註冊 `gsm8k_socratic_mac` / `gsm8k_socratic_mac_test`
-- **訓練**：`m3_socratic_config.yaml`（SFT on socratic，與研究用 prompt 一致）
-- **評估**：`m3_socratic_eval_finetuned.yaml`（微調後 adapter）、`m3_socratic_eval_promptonly.yaml`（僅 base 模型，相同 prompt）
+- **資料**：`prepare_socratic_dataset.py` 下載 socratic 子集，轉成 Alpaca，註冊 `gsm8k_socratic_train` / `gsm8k_socratic_test`
+- **訓練**：`socratic_train_config.yaml`（SFT on socratic，與研究用 prompt 一致）
+- **評估**：`socratic_finetuned_eval.yaml`（微調後 adapter）、`socratic_promptonly_eval.yaml`（僅 base 模型，相同 prompt）
 - **指標**：`evaluate_gsm8k.py` 支援四項指標（Reasoning、Guidance Density、Socratic Format Adherence）；**Qwen2.5-14B** 評估使用 `evaluate_with_qwen14b.py`（Reasoning 由 14B 從推理算出答案＋Socratic Score）
 
 ---
@@ -23,7 +23,7 @@
 ### 2.1 準備 Socratic 資料（只需跑一次）
 
 ```bash
-python prepare_socratic.py
+python prepare_socratic_dataset.py
 ```
 
 會產生 `data/custom/gsm8k_socratic_alpaca_{train,test}.jsonl` 並更新 `data/custom/dataset_info.json`。
@@ -31,36 +31,36 @@ python prepare_socratic.py
 ### 2.2 訓練（Condition 2：Fine-tuned）
 
 ```bash
-llamafactory-cli train m3_socratic_config.yaml
+llamafactory-cli train socratic_train_config.yaml
 ```
 
-輸出目錄：`outputs/gsm8k_socratic_qwen_m3`。
+輸出目錄：`outputs/gsm8k_socratic_qwen`。
 
 ### 2.3 推論
 
 **Condition 1 — Prompt-only（base 模型，相同 prompt）：**
 
 ```bash
-llamafactory-cli train m3_socratic_eval_promptonly.yaml
+llamafactory-cli train socratic_promptonly_eval.yaml
 ```
 
-輸出：`outputs/gsm8k_socratic_qwen_m3_eval_promptonly/generated_predictions.jsonl`。
+輸出：`outputs/gsm8k_socratic_qwen_eval_promptonly/generated_predictions.jsonl`。
 
 **Condition 2 — Fine-tuned（載入 socratic 微調 adapter）：**
 
 ```bash
-llamafactory-cli train m3_socratic_eval_finetuned.yaml
+llamafactory-cli train socratic_finetuned_eval.yaml
 ```
 
-輸出：`outputs/gsm8k_socratic_qwen_m3_eval_finetuned/generated_predictions.jsonl`。
+輸出：`outputs/gsm8k_socratic_qwen_eval_finetuned/generated_predictions.jsonl`。
 
 ### 2.4 評估
 
 **規則型指標**（`evaluate_gsm8k.py`）：
 
 ```bash
-python evaluate_gsm8k.py outputs/gsm8k_socratic_qwen_m3_eval_promptonly
-python evaluate_gsm8k.py outputs/gsm8k_socratic_qwen_m3_eval_finetuned
+python evaluate_gsm8k.py outputs/gsm8k_socratic_qwen_eval_promptonly
+python evaluate_gsm8k.py outputs/gsm8k_socratic_qwen_eval_finetuned
 ```
 
 會輸出：Reasoning (Accuracy Pass@1)、Guidance Density、Socratic Format Adherence。
@@ -69,9 +69,9 @@ python evaluate_gsm8k.py outputs/gsm8k_socratic_qwen_m3_eval_finetuned
 
 ```bash
 # 4-bit 量化，快速試跑可加 --max-samples 20
-python evaluate_with_qwen14b.py outputs/gsm8k_socratic_qwen_m3_eval_promptonly \
+python evaluate_with_qwen14b.py outputs/gsm8k_socratic_qwen_eval_promptonly \
   --model Qwen/Qwen2.5-14B-Instruct --quantize 4bit
-python evaluate_with_qwen14b.py outputs/gsm8k_socratic_qwen_m3_eval_finetuned \
+python evaluate_with_qwen14b.py outputs/gsm8k_socratic_qwen_eval_finetuned \
   --model Qwen/Qwen2.5-14B-Instruct --quantize 4bit
 
 # Apple Silicon 可改用 MLX（需 pip install mlx mlx-lm）
@@ -112,7 +112,7 @@ python evaluate_with_qwen14b.py outputs/... --backend mlx
 ## 5. 與目前 main 實驗的差異
 
 - 你先前用的是 **main** 子集與 `gsm8k_mac`，且不同 instruction。
-- 現在改為 **socratic** 子集、`gsm8k_socratic_mac`，以及上述研究用 prompt；訓練與評估都用 socratic，以對齊研究設計。
+- 現在改為 **socratic** 子集、`gsm8k_socratic_train`，以及上述研究用 prompt；訓練與評估都用 socratic，以對齊研究設計。
 
 若之後要**快速試跑**（例如除錯），可在對應 yaml 裡加上 `max_samples: 50` 等限制，再跑 `train` / `eval`。
 
@@ -122,7 +122,7 @@ python evaluate_with_qwen14b.py outputs/... --backend mlx
 
 | 用途 | 對應位置 | 說明 |
 |------|----------|------|
-| **生成用 prompt**（3B 推論時看到的 instruction + 題目） | `data/custom/gsm8k_socratic_alpaca_*.jsonl` 的 `instruction` 欄位；重新產生資料時則改 `prepare_socratic.py` 的 `SOCRATIC_INSTRUCTION` | 與訓練資料一致，答案格式請用 `####`（評估腳本已同時支援 `###` 與 `####`） |
+| **生成用 prompt**（3B 推論時看到的 instruction + 題目） | `data/custom/gsm8k_socratic_alpaca_*.jsonl` 的 `instruction` 欄位；重新產生資料時則改 `prepare_socratic_dataset.py` 的 `SOCRATIC_INSTRUCTION` | 與訓練資料一致，答案格式請用 `####`（評估腳本已同時支援 `###` 與 `####`） |
 | **14B Reasoning**（由推理文算出數字答案） | `evaluate_with_qwen14b.py` 的 `REASONING_SYSTEM`、`REASONING_USER` | 若改成「只比對 #### 後答案」或不同題目，在此改 14B 的系統/使用者提示 |
 | **14B Socratic Score**（1–5 評分準則） | `evaluate_with_qwen14b.py` 的 `SOCRATIC_SYSTEM`、`SOCRATIC_USER` | 若評分維度或尺度改變（例如改為「啟發性 vs 告知性」的定義），在此改 14B 的評分 prompt |
 

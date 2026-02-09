@@ -1,6 +1,6 @@
 # 使用 GSM8K socratic 子集 + 研究用 prompt 做 SFT（Qwen2.5-3B-Instruct, M3 Mac）
-# 執行: llamafactory-cli train m3_socratic_config.yaml
-# 需先跑: python prepare_socratic.py
+# 執行: llamafactory-cli train socratic_train_config.yaml
+# 需先跑: python prepare_socratic_dataset.py
 
 model_name_or_path: Qwen/Qwen2.5-3B-Instruct
 stage: sft
@@ -8,13 +8,13 @@ do_train: true
 finetuning_type: lora
 lora_target: all
 
-dataset: gsm8k_socratic_mac
+dataset: gsm8k_socratic_train
 dataset_dir: data/custom
 template: qwen
 cutoff_len: 512
 max_samples: 500
 
-output_dir: outputs/gsm8k_socratic_qwen_m3
+output_dir: outputs/gsm8k_socratic_qwen
 overwrite_output_dir: true  # 從頭訓練，不從 checkpoint 恢復（換新 instruction 時必用）
 per_device_train_batch_size: 1
 gradient_accumulation_steps: 8
