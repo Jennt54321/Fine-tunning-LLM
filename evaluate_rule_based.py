@@ -21,10 +21,10 @@ Evaluators	Qwen2.5-7B, 14B, 72B (and their MLX 4-bit variants)
    llamafactory-cli train socratic_promptonly_eval.yaml
 
 2. 再跑此腳本：
-   python evaluate_gsm8k.py outputs/gsm8k_qwen_m3_eval
-   python evaluate_gsm8k.py outputs/gsm8k_socratic_qwen_eval_finetuned
-   python evaluate_gsm8k.py outputs/gsm8k_socratic_qwen_eval_promptonly
-   python evaluate_gsm8k.py path/to/generated_predictions.jsonl
+   python evaluate_rule_based.py outputs/gsm8k_qwen_m3_eval
+   python evaluate_rule_based.py outputs/gsm8k_socratic_qwen_eval_finetuned
+   python evaluate_rule_based.py outputs/gsm8k_socratic_qwen_eval_promptonly
+   python evaluate_rule_based.py path/to/generated_predictions.jsonl
 """
 from __future__ import annotations
 

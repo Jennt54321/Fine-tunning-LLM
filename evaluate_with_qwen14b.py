@@ -23,12 +23,12 @@ import os
 import re
 import sys
 
-# Reuse format-free extraction from evaluate_gsm8k
-from evaluate_gsm8k import extract_gsm8k_answer as _extract_gsm8k_answer, normalize_answer
+# Reuse format-free extraction from evaluate_rule_based
+from evaluate_rule_based import extract_gsm8k_answer as _extract_gsm8k_answer, normalize_answer
 
 
 def extract_gsm8k_answer(text: str) -> str | None:
-    """Extract the final answer (format-free). Delegates to evaluate_gsm8k."""
+    """Extract the final answer (format-free). Delegates to evaluate_rule_based."""
     ans, _ = _extract_gsm8k_answer(text)
     return ans
 

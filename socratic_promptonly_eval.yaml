@@ -1,7 +1,7 @@
 # 評估「Prompt-only」條件：僅用 base Qwen2.5-3B-Instruct，不載入 adapter
 # 同樣在 gsm8k_socratic test 上、相同 prompt（instruction 在資料裡）做 predict
 # 執行: llamafactory-cli train socratic_promptonly_eval.yaml
-# 之後: python evaluate_gsm8k.py outputs/gsm8k_socratic_qwen_eval_promptonly
+# 之後: python evaluate_rule_based.py outputs/gsm8k_socratic_qwen_eval_promptonly
 #       python evaluate_with_qwen14b.py outputs/gsm8k_socratic_qwen_eval_promptonly  # Guidance Quality (Socratic Score)
 
 model_name_or_path: Qwen/Qwen2.5-3B-Instruct

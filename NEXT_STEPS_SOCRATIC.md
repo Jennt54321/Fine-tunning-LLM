@@ -5,7 +5,7 @@
 - **資料**：`prepare_socratic_dataset.py` 下載 socratic 子集，轉成 Alpaca，註冊 `gsm8k_socratic_train` / `gsm8k_socratic_test`
 - **訓練**：`socratic_train_config.yaml`（SFT on socratic，與研究用 prompt 一致）
 - **評估**：`socratic_finetuned_eval.yaml`（微調後 adapter）、`socratic_promptonly_eval.yaml`（僅 base 模型，相同 prompt）
-- **指標**：`evaluate_gsm8k.py` 支援四項指標（Reasoning、Guidance Density、Socratic Format Adherence）；**Qwen2.5-14B** 評估使用 `evaluate_with_qwen14b.py`（Reasoning 由 14B 從推理算出答案＋Socratic Score）
+- **指標**：`evaluate_rule_based.py` 支援四項指標（Reasoning、Guidance Density、Socratic Format Adherence）；**Qwen2.5-14B** 評估使用 `evaluate_with_qwen14b.py`（Reasoning 由 14B 從推理算出答案＋Socratic Score）
 
 ---
 
@@ -56,11 +56,11 @@ llamafactory-cli train socratic_finetuned_eval.yaml
 
 ### 2.4 評估
 
-**規則型指標**（`evaluate_gsm8k.py`）：
+**規則型指標**（`evaluate_rule_based.py`）：
 
 ```bash
-python evaluate_gsm8k.py outputs/gsm8k_socratic_qwen_eval_promptonly
-python evaluate_gsm8k.py outputs/gsm8k_socratic_qwen_eval_finetuned
+python evaluate_rule_based.py outputs/gsm8k_socratic_qwen_eval_promptonly
+python evaluate_rule_based.py outputs/gsm8k_socratic_qwen_eval_finetuned
 ```
 
 會輸出：Reasoning (Accuracy Pass@1)、Guidance Density、Socratic Format Adherence。
@@ -86,7 +86,7 @@ python evaluate_with_qwen14b.py outputs/... --backend mlx
 - **改用 MLX**（Apple Silicon）：  
   `pip install mlx mlx-lm` 後  
   `python evaluate_with_qwen14b.py ... --backend mlx`
-- 或先只用 `evaluate_gsm8k.py` 的規則型指標，暫不做 14B 評估。
+- 或先只用 `evaluate_rule_based.py` 的規則型指標，暫不做 14B 評估。
 
 ---
 
@@ -102,9 +102,9 @@ python evaluate_with_qwen14b.py outputs/... --backend mlx
 
 | 維度 | 指標 | 說明 |
 |------|------|------|
-| Reasoning | Accuracy (Pass@1) | `evaluate_gsm8k.py`（#### 答案比對）；**Qwen2.5-14B**：`evaluate_with_qwen14b.py`（拿掉 #### 後由 14B 算出答案再比對） |
-| Guidance Density | Question count | 每則回覆 `?` 的數量，`evaluate_gsm8k.py` 已輸出 |
-| Socratic Format Adherence | 格式遵從 | 是否符合 fine-tuned 輸出格式（Question? ** <<expr>>，####），`evaluate_gsm8k.py` 已實作 |
+| Reasoning | Accuracy (Pass@1) | `evaluate_rule_based.py`（#### 答案比對）；**Qwen2.5-14B**：`evaluate_with_qwen14b.py`（拿掉 #### 後由 14B 算出答案再比對） |
+| Guidance Density | Question count | 每則回覆 `?` 的數量，`evaluate_rule_based.py` 已輸出 |
+| Socratic Format Adherence | 格式遵從 | 是否符合 fine-tuned 輸出格式（Question? ** <<expr>>，####），`evaluate_rule_based.py` 已實作 |
 | Guidance Quality | Socratic Score | `evaluate_with_qwen14b.py` 使用 **Qwen2.5-14B** 以 Prompt 評「啟發性」v.s.「告知性」（1–5） |
 
 ---
@@ -126,4 +126,4 @@ python evaluate_with_qwen14b.py outputs/... --backend mlx
 | **14B Reasoning**（由推理文算出數字答案） | `evaluate_with_qwen14b.py` 的 `REASONING_SYSTEM`、`REASONING_USER` | 若改成「只比對 #### 後答案」或不同題目，在此改 14B 的系統/使用者提示 |
 | **14B Socratic Score**（1–5 評分準則） | `evaluate_with_qwen14b.py` 的 `SOCRATIC_SYSTEM`、`SOCRATIC_USER` | 若評分維度或尺度改變（例如改為「啟發性 vs 告知性」的定義），在此改 14B 的評分 prompt |
 
-規則型指標（Accuracy 從 ####/### 取答案、Question count、Socratic Format Adherence）在 `evaluate_gsm8k.py`，邏輯與 prompt 無關；若只改「是否用 14B 算答案 / 是否用 14B 評 Socratic」，只需改上述 14B 的常數即可。
+規則型指標（Accuracy 從 ####/### 取答案、Question count、Socratic Format Adherence）在 `evaluate_rule_based.py`，邏輯與 prompt 無關；若只改「是否用 14B 算答案 / 是否用 14B 評 Socratic」，只需改上述 14B 的常數即可。
