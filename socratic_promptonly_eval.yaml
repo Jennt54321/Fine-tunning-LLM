@@ -1,8 +1,8 @@
 # 評估「Prompt-only」條件：僅用 base Qwen2.5-3B-Instruct，不載入 adapter
 # 同樣在 gsm8k_socratic test 上、相同 prompt（instruction 在資料裡）做 predict
-# 執行: llamafactory-cli train m3_socratic_eval_promptonly.yaml
-# 之後: python evaluate_gsm8k.py outputs/gsm8k_socratic_qwen_m3_eval_promptonly
-#       python evaluate_with_qwen14b.py outputs/gsm8k_socratic_qwen_m3_eval_promptonly  # Guidance Quality (Socratic Score)
+# 執行: llamafactory-cli train socratic_promptonly_eval.yaml
+# 之後: python evaluate_rule_based.py outputs/gsm8k_socratic_qwen_eval_promptonly
+#       python evaluate_with_qwen14b.py outputs/gsm8k_socratic_qwen_eval_promptonly  # Guidance Quality (Socratic Score)
 
 model_name_or_path: Qwen/Qwen2.5-3B-Instruct
 # 不設定 adapter_name_or_path → 使用 base 模型
@@ -14,14 +14,14 @@ do_predict: true
 finetuning_type: lora
 
 dataset_dir: data/custom
-eval_dataset: gsm8k_socratic_mac_test
+eval_dataset: gsm8k_socratic_test
 # cutoff_len 過短會讓 preprocess 時 target (label) 被截斷，導致 GT 提取錯誤。Socratic 格式 output 較長，建議 2048。
 cutoff_len: 2048
 # max_samples: 5   # 快速試跑用；註解掉則跑完整 1319 筆
 predict_with_generate: true
 do_sample: false   # 貪婪解碼，避免 MPS 上採樣出現 inf/nan
 
-output_dir: outputs/gsm8k_socratic_qwen_m3_eval_promptonly
+output_dir: outputs/gsm8k_socratic_qwen_eval_promptonly
 overwrite_output_dir: true
 report_to: none
 

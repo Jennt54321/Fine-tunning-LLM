@@ -41,7 +41,7 @@ def main():
             for ex in tqdm(ds[split], desc=f"Converting {split}"):
                 f.write(json.dumps(to_alpaca(ex), ensure_ascii=False) + "\n")
 
-    # 讀取現有 dataset_info，新增 socratic 條目（保留既有 gsm8k_mac 等）
+    # 讀取現有 dataset_info，新增或更新 socratic 條目
     config_path = "data/custom/dataset_info.json"
     if os.path.isfile(config_path):
         with open(config_path, "r", encoding="utf-8") as f:
@@ -49,12 +49,12 @@ def main():
     else:
         dataset_info = {}
 
-    dataset_info["gsm8k_socratic_mac"] = {
+    dataset_info["gsm8k_socratic_train"] = {
         "file_name": "gsm8k_socratic_alpaca_train.jsonl",
         "formatting": "alpaca",
         "columns": {"prompt": "instruction", "query": "input", "response": "output"},
     }
-    dataset_info["gsm8k_socratic_mac_test"] = {
+    dataset_info["gsm8k_socratic_test"] = {
         "file_name": "gsm8k_socratic_alpaca_test.jsonl",
         "formatting": "alpaca",
         "columns": {"prompt": "instruction", "query": "input", "response": "output"},
@@ -63,7 +63,7 @@ def main():
     with open(config_path, "w", encoding="utf-8") as f:
         json.dump(dataset_info, f, ensure_ascii=False, indent=2)
 
-    print("✅ GSM8K socratic 資料準備完成並已註冊（gsm8k_socratic_mac / gsm8k_socratic_mac_test）。")
+    print("✅ GSM8K socratic 資料準備完成並已註冊（gsm8k_socratic_train / gsm8k_socratic_test）。")
 
 
 if __name__ == "__main__":

@@ -9,7 +9,7 @@
       mlx-community/Qwen2.5-14B-Instruct-4bit（--backend mlx）。
 
 用法：
-  python evaluate_with_qwen14b.py outputs/gsm8k_socratic_qwen_m3_eval_finetuned \\
+  python evaluate_with_qwen14b.py outputs/gsm8k_socratic_qwen_eval_finetuned \\
     --model Qwen/Qwen2.5-14B-Instruct --quantize 4bit --max-samples 20
   python evaluate_with_qwen14b.py path/to/generated_predictions.jsonl --backend mlx
   # 若中斷（關機/當機），加上 --resume 可從上次進度繼續
@@ -23,12 +23,12 @@ import os
 import re
 import sys
 
-# Reuse format-free extraction from evaluate_gsm8k
-from evaluate_gsm8k import extract_gsm8k_answer as _extract_gsm8k_answer, normalize_answer
+# Reuse format-free extraction from evaluate_rule_based
+from evaluate_rule_based import extract_gsm8k_answer as _extract_gsm8k_answer, normalize_answer
 
 
 def extract_gsm8k_answer(text: str) -> str | None:
-    """Extract the final answer (format-free). Delegates to evaluate_gsm8k."""
+    """Extract the final answer (format-free). Delegates to evaluate_rule_based."""
     ans, _ = _extract_gsm8k_answer(text)
     return ans
 
@@ -391,7 +391,7 @@ def main():
     ap.add_argument(
         "path",
         nargs="?",
-        default="outputs/gsm8k_socratic_qwen_m3_eval_finetuned",
+        default="outputs/gsm8k_socratic_qwen_eval_finetuned",
         help="Path to eval output dir or generated_predictions.jsonl",
     )
     ap.add_argument("--model", default=default_model, help="HuggingFace model id (or MLX model if --backend mlx). Env: EVAL_MODEL_ID")
@@ -414,6 +414,9 @@ def main():
             output_json = os.path.join(p, "eval_full_results.json")
         elif os.path.isfile(p):
             output_json = os.path.join(os.path.dirname(p), "eval_full_results.json")
+        else:
+            # Path may not exist yet; treat as dir path for output
+            output_json = os.path.normpath(os.path.join(p, "eval_full_results.json"))
     run_eval(
         args.path,
         model_id=args.model,

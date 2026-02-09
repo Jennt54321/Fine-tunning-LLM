@@ -17,14 +17,14 @@ Evaluators	Qwen2.5-7B, 14B, 72B (and their MLX 4-bit variants)
 用法：
 1. 先跑 predict（擇一）：
    llamafactory-cli train m3_eval.yaml
-   llamafactory-cli train m3_socratic_eval_finetuned.yaml
-   llamafactory-cli train m3_socratic_eval_promptonly.yaml
+   llamafactory-cli train socratic_finetuned_eval.yaml
+   llamafactory-cli train socratic_promptonly_eval.yaml
 
 2. 再跑此腳本：
-   python evaluate_gsm8k.py outputs/gsm8k_qwen_m3_eval
-   python evaluate_gsm8k.py outputs/gsm8k_socratic_qwen_m3_eval_finetuned
-   python evaluate_gsm8k.py outputs/gsm8k_socratic_qwen_m3_eval_promptonly
-   python evaluate_gsm8k.py path/to/generated_predictions.jsonl
+   python evaluate_rule_based.py outputs/gsm8k_qwen_m3_eval
+   python evaluate_rule_based.py outputs/gsm8k_socratic_qwen_eval_finetuned
+   python evaluate_rule_based.py outputs/gsm8k_socratic_qwen_eval_promptonly
+   python evaluate_rule_based.py path/to/generated_predictions.jsonl
 """
 from __future__ import annotations
 
@@ -172,7 +172,7 @@ def evaluate(predictions_path: str, verbose: bool = False, output_json: str | No
     if not os.path.isfile(predictions_path):
         raise FileNotFoundError(
             f"Predictions not found: {predictions_path}\n"
-            "Run predict first, e.g. llamafactory-cli train m3_socratic_eval_finetuned.yaml"
+            "Run predict first, e.g. llamafactory-cli train socratic_finetuned_eval.yaml"
         )
 
     correct = 0

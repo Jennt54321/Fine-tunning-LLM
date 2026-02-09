@@ -3,9 +3,9 @@
 從 evaluate_with_qwen72b.py 的 --output-json 結果中，擷取 Socratic Score 最高的前 N 筆，
 並顯示完整的 prompt、predict、label。
 使用前須先執行：
-  python evaluate_with_qwen72b.py outputs/gsm8k_socratic_qwen_m3_eval_promptonly \\
+  python evaluate_with_qwen72b.py outputs/gsm8k_socratic_qwen_eval_promptonly \\
     --model mlx-community/Qwen2.5-14B-Instruct-4bit --backend mlx \\
-    -o outputs/gsm8k_socratic_qwen_m3_eval_promptonly/eval_socratic_results.json
+    -o outputs/gsm8k_socratic_qwen_eval_promptonly/eval_socratic_results.json
 """
 import argparse
 import json
