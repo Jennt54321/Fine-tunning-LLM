@@ -1,0 +1,23 @@
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Outputs & trained models (large files)
+outputs/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+
+# Optional: if data files are large, consider Git LFS or exclude
+# data/custom/*.jsonl

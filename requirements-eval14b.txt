@@ -1,4 +1,4 @@
-# Extra deps for evaluate_with_qwen72b.py (Qwen2.5-72B as evaluator)
+# Extra deps for evaluate_with_qwen14b.py (Qwen2.5-14B as evaluator)
 # Base: transformers, torch (from LLaMA-Factory / venv)
 transformers>=4.37.0
 torch

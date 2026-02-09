@@ -49,26 +49,26 @@ llamafactory-cli train m3_socratic_eval_finetuned.yaml
 
 ## 步驟 4：評估
 
-**4a. 規則型指標（Accuracy、Question count、Format adherence）：**
+**4a. 規則型指標**（evaluate_gsm8k.py 四項指標：Reasoning、Guidance Density、Socratic Format Adherence）：
 
 ```bash
 python evaluate_gsm8k.py outputs/gsm8k_socratic_qwen_m3_eval_promptonly
 python evaluate_gsm8k.py outputs/gsm8k_socratic_qwen_m3_eval_finetuned
 ```
 
-**4b. 72B 評估（Reasoning 由 72B 從推理算答案 + Socratic Score 1–5）：**
+**4b. Qwen2.5-14B 評估**（Reasoning 由 14B 從推理算答案 + Socratic Score 1–5）：
 
 ```bash
-python evaluate_with_qwen72b.py outputs/gsm8k_socratic_qwen_m3_eval_promptonly \
-  --model Qwen/Qwen2.5-72B-Instruct --quantize 4bit
+python evaluate_with_qwen14b.py outputs/gsm8k_socratic_qwen_m3_eval_promptonly \
+  --model Qwen/Qwen2.5-14B-Instruct --quantize 4bit
 
-python evaluate_with_qwen72b.py outputs/gsm8k_socratic_qwen_m3_eval_finetuned \
-  --model Qwen/Qwen2.5-72B-Instruct --quantize 4bit
+python evaluate_with_qwen14b.py outputs/gsm8k_socratic_qwen_m3_eval_finetuned \
+  --model Qwen/Qwen2.5-14B-Instruct --quantize 4bit
 ```
 
 - 快速試跑可加：`--max-samples 20`
 - Apple Silicon 可改用：`--backend mlx`（需 `pip install mlx mlx-lm`）
-- 72B 約需 86GB+ 下載；磁碟不足可改用較小模型：`--model Qwen/Qwen2.5-7B-Instruct --quantize 4bit`
+- 14B 約需 28GB+ 下載；磁碟不足可改用：`--model Qwen/Qwen2.5-7B-Instruct --quantize 4bit`
 
 ---
 
@@ -80,8 +80,8 @@ python evaluate_with_qwen72b.py outputs/gsm8k_socratic_qwen_m3_eval_finetuned \
 | 2 | `llamafactory-cli train m3_socratic_config.yaml` | `outputs/gsm8k_socratic_qwen_m3/` |
 | 3a | `llamafactory-cli train m3_socratic_eval_promptonly.yaml` | `.../eval_promptonly/generated_predictions.jsonl` |
 | 3b | `llamafactory-cli train m3_socratic_eval_finetuned.yaml` | `.../eval_finetuned/generated_predictions.jsonl` |
-| 4a | `python evaluate_gsm8k.py outputs/...` | 終端輸出 Accuracy、Question count、Format adherence |
-| 4b | `python evaluate_with_qwen72b.py outputs/...` | 終端輸出 Reasoning (72B)、Socratic Score；可加 `--output-json` 存檔 |
+| 4a | `python evaluate_gsm8k.py outputs/...` | 終端輸出 Reasoning、Guidance Density、Socratic Format Adherence |
+| 4b | `python evaluate_with_qwen14b.py outputs/...` | 終端輸出 Reasoning (14B)、Socratic Score；可加 `--output-json` 存檔 |
 
 ---
 
@@ -99,6 +99,6 @@ llamafactory-cli train m3_socratic_eval_finetuned.yaml
 python evaluate_gsm8k.py outputs/gsm8k_socratic_qwen_m3_eval_promptonly
 python evaluate_gsm8k.py outputs/gsm8k_socratic_qwen_m3_eval_finetuned
 
-python evaluate_with_qwen72b.py outputs/gsm8k_socratic_qwen_m3_eval_promptonly --model Qwen/Qwen2.5-72B-Instruct --quantize 4bit
-python evaluate_with_qwen72b.py outputs/gsm8k_socratic_qwen_m3_eval_finetuned --model Qwen/Qwen2.5-72B-Instruct --quantize 4bit
+python evaluate_with_qwen14b.py outputs/gsm8k_socratic_qwen_m3_eval_promptonly --model Qwen/Qwen2.5-14B-Instruct --quantize 4bit
+python evaluate_with_qwen14b.py outputs/gsm8k_socratic_qwen_m3_eval_finetuned --model Qwen/Qwen2.5-14B-Instruct --quantize 4bit
 ```

@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
 """
-使用 Qwen2.5-72B 作為評估模型，對 generated_predictions.jsonl 進行：
+使用 Qwen2.5-14B 作為評估模型，對 generated_predictions.jsonl 進行：
 
-1. Reasoning (Accuracy via 72B)：拿掉 #### 後的推理內容交給 72B，請其給出最終數字答案，再與 GT 比對。
-2. Socratic Score：以 Prompt 請 72B 評估回覆的「啟發性」v.s.「告知性」（1–5）。
+1. Reasoning (Accuracy via 14B)：拿掉 #### 後的推理內容交給 14B，請其給出最終數字答案，再與 GT 比對。
+2. Socratic Score：以 Prompt 請 14B 評估回覆的「啟發性」v.s.「告知性」（1–5）。
 
 依賴：transformers, torch；4-bit 時需 bitsandbytes。Apple Silicon 可選 mlx / mlx_lm 搭配
-      mlx-community/Qwen2.5-72B-Instruct-4bit（--backend mlx）。
+      mlx-community/Qwen2.5-14B-Instruct-4bit（--backend mlx）。
 
 用法：
-  python evaluate_with_qwen72b.py outputs/gsm8k_socratic_qwen_m3_eval_finetuned \\
-    --model Qwen/Qwen2.5-72B-Instruct --quantize 4bit --max-samples 20
-  python evaluate_with_qwen72b.py path/to/generated_predictions.jsonl --backend mlx
+  python evaluate_with_qwen14b.py outputs/gsm8k_socratic_qwen_m3_eval_finetuned \\
+    --model Qwen/Qwen2.5-14B-Instruct --quantize 4bit --max-samples 20
+  python evaluate_with_qwen14b.py path/to/generated_predictions.jsonl --backend mlx
+  # 若中斷（關機/當機），加上 --resume 可從上次進度繼續
+  python evaluate_with_qwen14b.py outputs/... -o outputs/.../eval_full_results.json --resume
 """
 from __future__ import annotations
 
@@ -21,19 +23,14 @@ import os
 import re
 import sys
 
+# Reuse format-free extraction from evaluate_gsm8k
+from evaluate_gsm8k import extract_gsm8k_answer as _extract_gsm8k_answer, normalize_answer
+
 
 def extract_gsm8k_answer(text: str) -> str | None:
-    """Extract the answer after the last '####' or '###' (GSM8K-style). Accepts both."""
-    if not text:
-        return None
-    for sep in ("####", "###"):
-        if sep in text:
-            parts = re.split(r"\s*" + re.escape(sep) + r"\s*", text)
-            if len(parts) >= 2:
-                raw = parts[-1].strip().split("\n")[0].strip()
-                if raw:
-                    return raw.replace(",", "").strip()
-    return None
+    """Extract the final answer (format-free). Delegates to evaluate_gsm8k."""
+    ans, _ = _extract_gsm8k_answer(text)
+    return ans
 
 
 def reasoning_only(predict: str) -> str:
@@ -53,7 +50,7 @@ def normalize_number(s: str) -> str:
 
 
 def parse_first_number(text: str) -> str | None:
-    """Extract first number (including decimals) from 72B reply. Prefer last number if multiple."""
+    """Extract first number (including decimals) from LLM reply. Prefer last number if multiple."""
     if not text:
         return None
     # Match integers or decimals, possibly with commas
@@ -64,7 +61,7 @@ def parse_first_number(text: str) -> str | None:
 
 
 def parse_socratic_score(text: str) -> int | None:
-    """Expect 1–5 from 72B. Return None if unparseable."""
+    """Expect 1–5 from LLM. Return None if unparseable."""
     if not text:
         return None
     m = re.search(r"[1-5]", text)
@@ -75,7 +72,7 @@ def count_questions(text: str) -> int:
     return (text or "").count("?")
 
 
-# --- Prompts for 72B（若評估方式有更改，請在此修改 REASONING_* / SOCRATIC_* 以對齊新準則）---
+# --- Prompts for 14B（若評估方式有更改，請在此修改 REASONING_* / SOCRATIC_* 以對齊新準則）---
 REASONING_SYSTEM = (
     "You are an expert grader. Given a model's step-by-step reasoning for a math word problem, "
     "you must determine the final numeric answer. Reply with only that number, nothing else."
@@ -98,7 +95,7 @@ SOCRATIC_USER = "Rate this response (1–5):\n\n{response}\n\nReply with only on
 
 
 def load_model_transformers(model_id: str, quantize: str, device_map: str = "auto"):
-    """Load Qwen2.5-72B via transformers. Optionally 4bit/8bit via bitsandbytes."""
+    """Load Qwen2.5-14B via transformers. Optionally 4bit/8bit via bitsandbytes."""
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
     tok = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
@@ -130,8 +127,8 @@ def load_model_transformers(model_id: str, quantize: str, device_map: str = "aut
     return model, tok
 
 
-def load_model_mlx(model_id: str = "mlx-community/Qwen2.5-72B-Instruct-4bit"):
-    """Load MLX quantized Qwen2.5-72B for Apple Silicon."""
+def load_model_mlx(model_id: str = "mlx-community/Qwen2.5-14B-Instruct-4bit"):
+    """Load MLX quantized Qwen2.5-14B for Apple Silicon."""
     try:
         import mlx_lm
     except ImportError as e:
@@ -182,7 +179,7 @@ def generate_mlx(model, tokenizer, messages: list[dict], max_tokens: int = 64):
 
 def run_eval(
     predictions_path: str,
-    model_id: str = "Qwen/Qwen2.5-72B-Instruct",
+    model_id: str = "Qwen/Qwen2.5-14B-Instruct",
     backend: str = "transformers",
     quantize: str = "4bit",
     max_samples: int | None = None,
@@ -190,6 +187,8 @@ def run_eval(
     output_json: str | None = None,
     verbose: bool = False,
     dry_run: bool = False,
+    resume: bool = False,
+    checkpoint_every: int = 50,
 ) -> None:
     if os.path.isdir(predictions_path):
         predictions_path = os.path.join(predictions_path, "generated_predictions.jsonl")
@@ -225,7 +224,7 @@ def run_eval(
     # Load model
     if backend == "mlx":
         model, tokenizer = load_model_mlx(
-            model_id if "mlx" in model_id else "mlx-community/Qwen2.5-72B-Instruct-4bit"
+            model_id if "mlx" in model_id else "mlx-community/Qwen2.5-14B-Instruct-4bit"
         )
         def generate(messages):
             return generate_mlx(model, tokenizer, messages)
@@ -234,10 +233,51 @@ def run_eval(
         def generate(messages):
             return generate_transformers(model, tokenizer, messages)
 
-    correct_72b = 0
+    correct_llm = 0
     total_reasoning = 0
     socratic_scores: list[int] = []
     per_sample = []
+    existing_by_index: dict[int, dict] = {}
+
+    # Resume: load existing results if output_json exists and has LLM-evaluated samples
+    if resume and output_json and os.path.isfile(output_json):
+        try:
+            with open(output_json, "r", encoding="utf-8") as f:
+                loaded = json.load(f)
+            for r in loaded.get("per_sample", []):
+                idx = r.get("index")
+                if idx is not None and (r.get("reasoning_llm_raw") is not None or r.get("socratic_llm_raw") is not None):
+                    existing_by_index[idx] = r
+            if existing_by_index:
+                print(f"Resuming: found {len(existing_by_index)} already-evaluated samples")
+        except (json.JSONDecodeError, KeyError) as e:
+            print(f"Resume: could not load {output_json}: {e}. Starting fresh.")
+
+    def save_checkpoint():
+        if not output_json:
+            return
+        rule_correct = sum(1 for r in per_sample if r.get("reasoning_correct_rule"))
+        rule_total = len(per_sample)
+        qc_vals = [r["question_count"] for r in per_sample]
+        fmt_ok = sum(1 for r in per_sample if r.get("format_adherence"))
+        socratic_vals = [r["socratic_score"] for r in per_sample if r.get("socratic_score") is not None]
+        out = {
+            "predictions_path": predictions_path,
+            "model_id": model_id,
+            "backend": backend,
+            "quantize": quantize,
+            "n_samples": n,
+            "summary": {
+                "reasoning_accuracy_rule": 100.0 * rule_correct / rule_total if rule_total else None,
+                "reasoning_accuracy_llm": 100.0 * correct_llm / total_reasoning if total_reasoning else None,
+                "question_count_mean": sum(qc_vals) / len(qc_vals) if qc_vals else None,
+                "format_adherence_pct": 100.0 * fmt_ok / rule_total if rule_total else None,
+                "socratic_score_mean": sum(socratic_vals) / len(socratic_vals) if socratic_vals else None,
+            },
+            "per_sample": per_sample,
+        }
+        with open(output_json, "w", encoding="utf-8") as f:
+            json.dump(out, f, ensure_ascii=False, indent=2)
 
     for i, row in enumerate(rows):
         label = row.get("label") or ""
@@ -247,8 +287,22 @@ def run_eval(
         if gt is None:
             continue
 
+        # Reuse existing result if resuming
+        if i in existing_by_index:
+            rec = existing_by_index[i]
+            per_sample.append(rec)
+            if rec.get("reasoning_llm_answer") is not None:
+                total_reasoning += 1
+                if rec.get("reasoning_correct_llm"):
+                    correct_llm += 1
+            if rec.get("socratic_score") is not None:
+                socratic_scores.append(rec["socratic_score"])
+            if verbose:
+                print(f"  [{i+1}/{n}] (resumed) gt={gt} llm_answer={rec.get('reasoning_llm_answer')} socratic={rec.get('socratic_score')}")
+            continue
+
         ans_rule = extract_gsm8k_answer(pred)
-        rule_correct = ans_rule is not None and normalize_number(gt) == normalize_number(ans_rule)
+        rule_correct = ans_rule is not None and normalize_answer(gt) == normalize_answer(ans_rule)
         qc = count_questions(pred)
         format_ok = ans_rule is not None
 
@@ -270,13 +324,13 @@ def run_eval(
                 {"role": "user", "content": REASONING_USER.format(reasoning=reasoning)},
             ]
             reply = generate(messages)
-            ans_72b = parse_first_number(reply)
-            rec["reasoning_72b_raw"] = reply
-            rec["reasoning_72b_answer"] = ans_72b
-            if ans_72b is not None:
+            ans_llm = parse_first_number(reply)
+            rec["reasoning_llm_raw"] = reply
+            rec["reasoning_llm_answer"] = ans_llm
+            if ans_llm is not None:
                 total_reasoning += 1
-                if normalize_number(gt) == ans_72b:
-                    correct_72b += 1
+                if normalize_answer(gt) == normalize_answer(ans_llm):
+                    correct_llm += 1
                     rec["reasoning_correct_llm"] = True
                 else:
                     rec["reasoning_correct_llm"] = False
@@ -288,7 +342,7 @@ def run_eval(
             ]
             reply = generate(messages)
             score = parse_socratic_score(reply)
-            rec["socratic_72b_raw"] = reply
+            rec["socratic_llm_raw"] = reply
             rec["socratic_score"] = score
             if score is not None:
                 socratic_scores.append(score)
@@ -299,56 +353,40 @@ def run_eval(
 
         per_sample.append(rec)
         if verbose:
-            print(f"  [{i+1}/{n}] gt={gt} 72b_answer={rec.get('reasoning_72b_answer')} socratic={rec.get('socratic_score')}")
+            print(f"  [{i+1}/{n}] gt={gt} llm_answer={rec.get('reasoning_llm_answer')} socratic={rec.get('socratic_score')}")
+
+        # Periodic checkpoint (in case of crash)
+        if output_json and len(per_sample) % checkpoint_every == 0:
+            save_checkpoint()
+            print(f"  Checkpoint: saved {len(per_sample)} samples")
 
     # Report
-    print("[Qwen2.5-72B Evaluation]")
+    print("[Qwen2.5-14B Evaluation]")
     if do_reasoning and total_reasoning:
-        acc = 100.0 * correct_72b / total_reasoning
-        print(f"  Reasoning (72B): {correct_72b}/{total_reasoning} = {acc:.2f}%")
+        acc = 100.0 * correct_llm / total_reasoning
+        print(f"  Reasoning (14B): {correct_llm}/{total_reasoning} = {acc:.2f}%")
     elif do_reasoning:
-        print("  Reasoning (72B): N/A (no valid 72B answers)")
+        print("  Reasoning (14B): N/A (no valid 14B answers)")
     if do_socratic and socratic_scores:
         avg = sum(socratic_scores) / len(socratic_scores)
-        print(f"  Socratic Score (72B): mean = {avg:.2f}, min = {min(socratic_scores)}, max = {max(socratic_scores)}")
+        print(f"  Socratic Score (14B): mean = {avg:.2f}, min = {min(socratic_scores)}, max = {max(socratic_scores)}")
     elif do_socratic:
-        print("  Socratic Score (72B): N/A (no parseable scores)")
+        print("  Socratic Score (14B): N/A (no parseable scores)")
 
     if output_json:
-        rule_correct = sum(1 for r in per_sample if r.get("reasoning_correct_rule"))
-        rule_total = len(per_sample)
-        qc_vals = [r["question_count"] for r in per_sample]
-        fmt_ok = sum(1 for r in per_sample if r.get("format_adherence"))
-        socratic_vals = [r["socratic_score"] for r in per_sample if r.get("socratic_score") is not None]
-        out = {
-            "predictions_path": predictions_path,
-            "model_id": model_id,
-            "backend": backend,
-            "quantize": quantize,
-            "n_samples": n,
-            "summary": {
-                "reasoning_accuracy_rule": 100.0 * rule_correct / rule_total if rule_total else None,
-                "reasoning_accuracy_llm": 100.0 * correct_72b / total_reasoning if total_reasoning else None,
-                "question_count_mean": sum(qc_vals) / len(qc_vals) if qc_vals else None,
-                "format_adherence_pct": 100.0 * fmt_ok / rule_total if rule_total else None,
-                "socratic_score_mean": sum(socratic_vals) / len(socratic_vals) if socratic_vals else None,
-            },
-            "per_sample": per_sample,
-        }
-        with open(output_json, "w", encoding="utf-8") as f:
-            json.dump(out, f, ensure_ascii=False, indent=2)
+        save_checkpoint()
         print(f"\nPer-sample results (all 4 dimensions) written to {output_json}")
 
 
 def main():
     import os as _os
 
-    default_model = _os.getenv("EVAL_MODEL_ID", "Qwen/Qwen2.5-72B-Instruct")
+    default_model = _os.getenv("EVAL_MODEL_ID", "Qwen/Qwen2.5-14B-Instruct")
     default_quantize = _os.getenv("EVAL_QUANTIZE", "4bit")
     default_backend = _os.getenv("EVAL_BACKEND", "transformers")
 
     ap = argparse.ArgumentParser(
-        description="Evaluate generated_predictions.jsonl using Qwen2.5-72B (reasoning + Socratic score)."
+        description="Evaluate generated_predictions.jsonl using Qwen2.5-14B (reasoning + Socratic score)."
     )
     ap.add_argument(
         "path",
@@ -356,7 +394,7 @@ def main():
         default="outputs/gsm8k_socratic_qwen_m3_eval_finetuned",
         help="Path to eval output dir or generated_predictions.jsonl",
     )
-    ap.add_argument("--model", default=default_model, help="HuggingFace model id (or MLX model if --backend mlx). Use Qwen/Qwen2.5-7B-Instruct when disk/RAM limited. Env: EVAL_MODEL_ID")
+    ap.add_argument("--model", default=default_model, help="HuggingFace model id (or MLX model if --backend mlx). Env: EVAL_MODEL_ID")
     ap.add_argument("--backend", choices=("transformers", "mlx"), default=default_backend, help="Env: EVAL_BACKEND")
     ap.add_argument("--quantize", choices=("4bit", "8bit", "none"), default=default_quantize, help="Env: EVAL_QUANTIZE")
     ap.add_argument("--max-samples", type=int, default=None, help="Cap samples for quick test")
@@ -364,6 +402,8 @@ def main():
     ap.add_argument("--output-json", "-o", default=None, help="Write per-sample results to JSON (default: {path}/eval_full_results.json)")
     ap.add_argument("-v", "--verbose", action="store_true")
     ap.add_argument("-n", "--dry-run", action="store_true", help="Validate inputs and print first prompt only, no model load")
+    ap.add_argument("--resume", action="store_true", help="Resume from existing output_json (skip already-evaluated samples)")
+    ap.add_argument("--checkpoint-every", type=int, default=50, help="Save checkpoint every N samples (default: 50)")
     args = ap.parse_args()
 
     quantize = "none" if args.backend == "mlx" else args.quantize
@@ -384,6 +424,8 @@ def main():
         output_json=output_json,
         verbose=args.verbose,
         dry_run=args.dry_run,
+        resume=args.resume,
+        checkpoint_every=args.checkpoint_every,
     )
 
 

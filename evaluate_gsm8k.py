@@ -3,10 +3,16 @@
 Evaluate GSM8K (main or socratic) from LLaMA-Factory generated_predictions.jsonl.
 
 支援研究計劃的四項指標：
-- Reasoning (Accuracy Pass@1): 此腳本以 #### 答案比對計算。若要以 **Qwen2.5-72B** 從「拿掉 #### 的推理」算出答案再比對，請用 `evaluate_with_qwen72b.py`。
-- Guidance Density (Question Count): 統計每個回覆中的 ? 數量。
-- Format Adherence: 是否確實將答案寫在 #### 後面。
-- Guidance Quality (Socratic Score): 使用 **Qwen2.5-72B** 評估時請用 `evaluate_with_qwen72b.py`。
+1. Reasoning (Accuracy Pass@1): 此腳本以 format-free 答案提取比對（#### 優先，其次 ** 數字 **、最後 <<expr=result>>、最後一行的數字）。
+2. Guidance Density: 每則回覆中 ? 的數量（Question count）。
+3. Socratic Format Adherence: 是否符合 fine-tuned 輸出格式（Question? ** Answer with <<expr=result>>，每步一行，#### 結尾）。
+4. Guidance Quality (Socratic Score): 使用 **Qwen2.5-14B** 評估時請用 `evaluate_with_qwen14b.py`。
+
+Type	Models
+Subject models	Qwen2.5-3B-Instruct (base + fine-tuned)
+Evaluators	Qwen2.5-7B, 14B, 72B (and their MLX 4-bit variants)
+
+若要以 LLM 從「拿掉 #### 的推理」算出答案再比對，請用 `evaluate_with_qwen14b.py`。
 
 用法：
 1. 先跑 predict（擇一）：
@@ -28,17 +34,88 @@ import os
 import re
 
 
-def extract_gsm8k_answer(text: str) -> str | None:
-    """Extract the answer after the last '####' or '###' (GSM8K-style). Accepts both."""
-    if not text:
-        return None
+def normalize_answer(s: str) -> str:
+    """Normalize answer for comparison: remove commas, strip, handle 18 vs 18.0."""
+    if not s:
+        return ""
+    s = s.strip().replace(",", "").replace(" ", "")
+    # Remove trailing .0 for integer equivalence (18.0 == 18)
+    if "." in s:
+        try:
+            f = float(s)
+            if f == int(f):
+                return str(int(f))
+            return s
+        except ValueError:
+            pass
+    return s
+
+
+def extract_gsm8k_answer(text: str) -> tuple[str | None, str]:
+    """
+    Extract the final numerical answer from model output, format-agnostic.
+
+    Tries multiple strategies (in order):
+    1. After #### or ### (GSM8K standard)
+    2. ** number ** or ** number at end (e.g. "** 24 miles **")
+    3. Last <<expr=result>> result (e.g. <<9*2=18>> -> 18)
+    4. Last number in the last 2 lines (common when format is wrong)
+
+    Returns (extracted_answer, method) where method is for debugging.
+    """
+    if not text or not text.strip():
+        return None, "empty"
+
+    # 1. #### or ### (primary)
     for sep in ("####", "###"):
         if sep in text:
             parts = re.split(r"\s*" + re.escape(sep) + r"\s*", text)
             if len(parts) >= 2:
                 raw = parts[-1].strip().split("\n")[0].strip()
                 if raw:
-                    return raw.replace(",", "").strip()
+                    ans = _extract_first_number(raw)
+                    if ans is not None:
+                        return ans, f"sep_{sep}"
+
+    # 2. ** number ** or ** number at end (original model often uses this)
+    star_match = re.search(r"\*\*\s*([-\d.,]+(?:\s*[%\$\w]+)?)\s*\*?\*?\s*$", text)
+    if star_match:
+        ans = _extract_first_number(star_match.group(1))
+        if ans is not None:
+            return ans, "star_bold"
+
+    # 3. Last <<expr=result>> — take the result part
+    compute_matches = list(re.finditer(r"<<[^=]+=([^>]+)>>", text))
+    if compute_matches:
+        last_result = compute_matches[-1].group(1).strip()
+        ans = _extract_first_number(last_result)
+        if ans is not None:
+            return ans, "last_compute"
+
+    # 4. Last number in last 2 lines (format-free fallback)
+    lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
+    for line in reversed(lines[-2:] if len(lines) >= 2 else lines):
+        numbers = re.findall(r"-?\d+\.?\d*", line)
+        if numbers:
+            # Take last number from the line (often the final answer)
+            last_num = numbers[-1]
+            # Sanity: avoid very large numbers that are likely intermediates
+            try:
+                n = float(last_num)
+                if abs(n) < 1e12:
+                    return last_num, "last_number"
+            except ValueError:
+                pass
+
+    return None, "not_found"
+
+
+def _extract_first_number(s: str) -> str | None:
+    """Extract the first number (int or decimal) from a string. Handles $18, 18%, 18.5, etc."""
+    s = s.strip().replace(",", "")
+    match = re.search(r"-?\d+\.?\d*", s)
+    if match:
+        return match.group(0)
     return None
 
 
@@ -47,9 +124,43 @@ def count_questions(text: str) -> int:
     return (text or "").count("?")
 
 
-def has_format_adherence(text: str) -> bool:
-    """True if answer is present after #### or ### (Format Adherence)."""
-    return extract_gsm8k_answer(text) is not None
+# Socratic format: Question? ** Answer with <<expr=result>>, one step per line, #### at end
+SOCRATIC_PATTERN = re.compile(r"\?\s*\*\*\s+")  # ? ** 
+GSM8K_COMPUTE_PATTERN = re.compile(r"<<[^>]+>>")  # <<expr=result>>
+
+
+def check_socratic_format_adherence(text: str) -> tuple[bool, dict]:
+    """
+    Check if output follows the fine-tuned Socratic format:
+    - Question? ** Answer (at least one step)
+    - <<expr=result>> computation blocks
+    - #### final answer
+    - Steps on separate lines (one Q&A per line)
+
+    Returns (pass: bool, details: dict).
+    """
+    if not text or not text.strip():
+        return False, {"has_qa_steps": False, "has_compute": False, "has_final": False, "steps_per_line": False}
+
+    has_qa = bool(SOCRATIC_PATTERN.search(text))
+    has_compute = bool(GSM8K_COMPUTE_PATTERN.search(text))
+    has_final = "####" in text or "###" in text
+
+    # Steps on separate lines: each line should have at most one ? ** pattern, or we count lines with ? **
+    lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
+    qa_lines = sum(1 for ln in lines if SOCRATIC_PATTERN.search(ln))
+    steps_per_line = qa_lines >= 1 and (len(lines) >= qa_lines or qa_lines >= 1)
+
+    # Pass if all key elements present
+    pass_ = has_qa and has_compute and has_final
+
+    details = {
+        "has_qa_steps": has_qa,
+        "has_compute": has_compute,
+        "has_final": has_final,
+        "steps_per_line": steps_per_line,
+    }
+    return pass_, details
 
 
 def evaluate(predictions_path: str, verbose: bool = False, output_json: str | None = None) -> None:
@@ -69,7 +180,7 @@ def evaluate(predictions_path: str, verbose: bool = False, output_json: str | No
     missing_pred = 0
     missing_label = 0
     question_counts: list[int] = []
-    format_ok = 0
+    socratic_format_ok = 0
     per_sample: list[dict] = []
 
     with open(predictions_path, "r", encoding="utf-8") as f:
@@ -81,29 +192,35 @@ def evaluate(predictions_path: str, verbose: bool = False, output_json: str | No
             label = row.get("label") or ""
             pred = row.get("predict") or ""
             prompt = row.get("prompt", "")
-            gt = extract_gsm8k_answer(label)
-            ans = extract_gsm8k_answer(pred)
+            gt, _ = extract_gsm8k_answer(label)
+            ans, ans_method = extract_gsm8k_answer(pred)
             if gt is None:
                 missing_label += 1
                 continue
             total += 1
-            rule_correct = ans is not None and gt == ans
+            # Normalize for comparison: 18 vs 18.0, 1,000 vs 1000
+            gt_norm = normalize_answer(gt)
+            ans_norm = normalize_answer(ans) if ans else ""
+            rule_correct = ans is not None and gt_norm == ans_norm
             if ans is None:
                 missing_pred += 1
             else:
-                if gt == ans:
+                if gt_norm == ans_norm:
                     correct += 1
             qc = count_questions(pred)
-            fc = has_format_adherence(pred)
+            socratic_pass, socratic_details = check_socratic_format_adherence(pred)
             question_counts.append(qc)
-            if fc:
-                format_ok += 1
+            if socratic_pass:
+                socratic_format_ok += 1
             rec = {
                 "index": idx,
                 "gt": gt,
+                "pred_extracted": ans,
+                "extraction_method": ans_method,
                 "reasoning_correct_rule": rule_correct,
                 "question_count": qc,
-                "format_adherence": fc,
+                "socratic_format_adherence": socratic_pass,
+                "socratic_format_details": socratic_details,
                 "socratic_score": None,
             }
             if output_json:
@@ -118,9 +235,9 @@ def evaluate(predictions_path: str, verbose: bool = False, output_json: str | No
     print(f"Predictions: {predictions_path}")
     print(f"Total (with valid label): {total}")
     if missing_label:
-        print(f"Skipped (no ####/### in label): {missing_label}")
+        print(f"Skipped (no extractable answer in label): {missing_label}")
     if missing_pred:
-        print(f"Missing prediction (no ####/### in model output): {missing_pred}")
+        print(f"Could not extract answer from model output: {missing_pred}")
     print()
 
     # 1. Reasoning — Accuracy (Pass@1)
@@ -136,19 +253,19 @@ def evaluate(predictions_path: str, verbose: bool = False, output_json: str | No
     else:
         print("[Guidance Density] Question count: N/A")
 
-    # 3. Format Adherence
+    # 3. Socratic Format Adherence (fine-tuned output pattern)
     if total:
-        fmt_pct = 100.0 * format_ok / total
-        print(f"[Format Adherence] Answer after ####/###: {format_ok}/{total} = {fmt_pct:.2f}%")
+        socratic_fmt_pct = 100.0 * socratic_format_ok / total
+        print(f"[Socratic Format Adherence] Question? ** <<expr>>, ####: {socratic_format_ok}/{total} = {socratic_fmt_pct:.2f}%")
     else:
-        print("[Format Adherence] N/A")
+        print("[Socratic Format Adherence] N/A")
 
     # 4. Socratic Score — 需另用 LLM 評估
-    print("[Guidance Quality] Socratic Score: N/A — use evaluate_with_qwen72b.py")
+    print("[Guidance Quality] Socratic Score: N/A — use evaluate_with_qwen14b.py")
 
     if output_json:
         mean_q = sum(question_counts) / n if n else 0
-        fmt_pct = 100.0 * format_ok / total if total else 0
+        socratic_fmt_pct = 100.0 * socratic_format_ok / total if total else 0
         acc = 100.0 * correct / total if total else 0
         out = {
             "predictions_path": predictions_path,
@@ -156,7 +273,7 @@ def evaluate(predictions_path: str, verbose: bool = False, output_json: str | No
             "summary": {
                 "reasoning_accuracy_rule": acc,
                 "question_count_mean": mean_q,
-                "format_adherence_pct": fmt_pct,
+                "socratic_format_adherence_pct": socratic_fmt_pct,
                 "socratic_score_mean": None,
             },
             "per_sample": per_sample,
@@ -168,7 +285,7 @@ def evaluate(predictions_path: str, verbose: bool = False, output_json: str | No
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Evaluate GSM8K from generated_predictions.jsonl (accuracy, question count, format adherence)."
+        description="Evaluate GSM8K from generated_predictions.jsonl (accuracy, question count, socratic format adherence)."
     )
     parser.add_argument(
         "path",
