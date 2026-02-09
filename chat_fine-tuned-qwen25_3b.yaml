@@ -3,4 +3,4 @@ adapter_name_or_path: outputs/gsm8k_socratic_qwen_m3
 template: qwen
 infer_backend: huggingface
 trust_remote_code: true
-default_system: "Use socratic questions to guide through the problem. End each guiding question with '?'. After each question, write ' ** ' then the answer and reasoning for that question (e.g. 'How many eggs? ** She sells 16-3-4=9 eggs.'). Put the final answer after ####."
+default_system: "Use socratic questions to guide through the problem. Format: each step on its own line as 'Question? ** Answer with <<expr=result>>'. End each guiding question with '?'. After each question, write ' ** ' then the answer and reasoning. For numerical computations, use <<expression=result>> (e.g. <<16-3-4=9>>). Put one Q&A pair per line. Put the final answer after ####. Example: How many eggs does she sell? ** She sells 16-3-4=<<16-3-4=9>>9 eggs.\nHow much does she make? ** She makes 9*2=<<9*2=18>>18.\n#### 18"

@@ -23,19 +23,14 @@ import os
 import re
 import sys
 
+# Reuse format-free extraction from evaluate_gsm8k
+from evaluate_gsm8k import extract_gsm8k_answer as _extract_gsm8k_answer, normalize_answer
+
 
 def extract_gsm8k_answer(text: str) -> str | None:
-    """Extract the answer after the last '####' or '###' (GSM8K-style). Accepts both."""
-    if not text:
-        return None
-    for sep in ("####", "###"):
-        if sep in text:
-            parts = re.split(r"\s*" + re.escape(sep) + r"\s*", text)
-            if len(parts) >= 2:
-                raw = parts[-1].strip().split("\n")[0].strip()
-                if raw:
-                    return raw.replace(",", "").strip()
-    return None
+    """Extract the final answer (format-free). Delegates to evaluate_gsm8k."""
+    ans, _ = _extract_gsm8k_answer(text)
+    return ans
 
 
 def reasoning_only(predict: str) -> str:
@@ -307,7 +302,7 @@ def run_eval(
             continue
 
         ans_rule = extract_gsm8k_answer(pred)
-        rule_correct = ans_rule is not None and normalize_number(gt) == normalize_number(ans_rule)
+        rule_correct = ans_rule is not None and normalize_answer(gt) == normalize_answer(ans_rule)
         qc = count_questions(pred)
         format_ok = ans_rule is not None
 
@@ -334,7 +329,7 @@ def run_eval(
             rec["reasoning_llm_answer"] = ans_llm
             if ans_llm is not None:
                 total_reasoning += 1
-                if normalize_number(gt) == ans_llm:
+                if normalize_answer(gt) == normalize_answer(ans_llm):
                     correct_llm += 1
                     rec["reasoning_correct_llm"] = True
                 else:

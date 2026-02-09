@@ -15,7 +15,8 @@ finetuning_type: lora
 
 dataset_dir: data/custom
 eval_dataset: gsm8k_socratic_mac_test
-cutoff_len: 512
+# cutoff_len 過短會讓 preprocess 時 target (label) 被截斷，導致 GT 提取錯誤。Socratic 格式 output 較長，建議 2048。
+cutoff_len: 2048
 # max_samples: 5   # 快速試跑用；註解掉則跑完整 1319 筆
 predict_with_generate: true
 do_sample: false   # 貪婪解碼，避免 MPS 上採樣出現 inf/nan
