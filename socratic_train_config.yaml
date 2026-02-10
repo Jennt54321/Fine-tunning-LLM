@@ -14,8 +14,8 @@ template: qwen
 cutoff_len: 1024  # 512 dropped ~8% of samples; 1024 keeps all (max ~760 tokens est.)
 # max_samples: unset = use full training data (gsm8k_socratic_alpaca_train.jsonl)
 
-output_dir: outputs/gsm8k_socratic_qwen
-overwrite_output_dir: true  # 從頭訓練，不從 checkpoint 恢復（換新 instruction 時必用）
+output_dir: /content/drive/MyDrive/llm_outputs/socratic_qwen25-3b-instruct
+overwrite_output_dir: false  # 從頭訓練，不從 checkpoint 恢復（換新 instruction 時必用）
 per_device_train_batch_size: 1
 gradient_accumulation_steps: 8
 learning_rate: 0.0002
@@ -23,8 +23,11 @@ num_train_epochs: 1.0
 lr_scheduler_type: cosine
 warmup_ratio: 0.03
 
-bf16: true
+bf16: false
+fp16: true
 logging_steps: 5
-save_steps: 500  # ~2 checkpoints per epoch with full 7k data (effective batch 8)
+save_strategy: steps
+save_steps: 100  # ~2 checkpoints per epoch with full 7k data (effective batch 8)
+save_total_limit: 3
 plot_loss: true
 include_num_input_tokens_seen: true
