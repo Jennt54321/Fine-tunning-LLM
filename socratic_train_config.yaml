@@ -11,8 +11,8 @@ lora_target: all
 dataset: gsm8k_socratic_train
 dataset_dir: data/custom
 template: qwen
-cutoff_len: 512
-max_samples: 500
+cutoff_len: 1024  # 512 dropped ~8% of samples; 1024 keeps all (max ~760 tokens est.)
+# max_samples: unset = use full training data (gsm8k_socratic_alpaca_train.jsonl)
 
 output_dir: outputs/gsm8k_socratic_qwen
 overwrite_output_dir: true  # 從頭訓練，不從 checkpoint 恢復（換新 instruction 時必用）
@@ -25,6 +25,6 @@ warmup_ratio: 0.03
 
 bf16: true
 logging_steps: 5
-save_steps: 100
+save_steps: 500  # ~2 checkpoints per epoch with full 7k data (effective batch 8)
 plot_loss: true
 include_num_input_tokens_seen: true
