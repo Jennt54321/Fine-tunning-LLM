@@ -22,6 +22,7 @@ import json
 import os
 import re
 import sys
+import threading
 
 # Reuse format-free extraction from evaluate_rule_based
 from evaluate_rule_based import extract_gsm8k_answer as _extract_gsm8k_answer, normalize_answer
@@ -253,9 +254,19 @@ def run_eval(
         except (json.JSONDecodeError, KeyError) as e:
             print(f"Resume: could not load {output_json}: {e}. Starting fresh.")
 
-    def save_checkpoint():
+    _checkpoint_thread: threading.Thread | None = None
+
+    def _write_checkpoint(out_dict: dict) -> None:
+        with open(output_json, "w", encoding="utf-8") as f:
+            json.dump(out_dict, f, ensure_ascii=False, indent=2)
+
+    def save_checkpoint(blocking: bool = False) -> None:
+        nonlocal _checkpoint_thread
         if not output_json:
             return
+        if _checkpoint_thread is not None:
+            _checkpoint_thread.join()
+            _checkpoint_thread = None
         rule_correct = sum(1 for r in per_sample if r.get("reasoning_correct_rule"))
         rule_total = len(per_sample)
         qc_vals = [r["question_count"] for r in per_sample]
@@ -274,10 +285,13 @@ def run_eval(
                 "format_adherence_pct": 100.0 * fmt_ok / rule_total if rule_total else None,
                 "socratic_score_mean": sum(socratic_vals) / len(socratic_vals) if socratic_vals else None,
             },
-            "per_sample": per_sample,
+            "per_sample": list(per_sample),
         }
-        with open(output_json, "w", encoding="utf-8") as f:
-            json.dump(out, f, ensure_ascii=False, indent=2)
+        if blocking:
+            _write_checkpoint(out)
+        else:
+            _checkpoint_thread = threading.Thread(target=_write_checkpoint, args=(out,))
+            _checkpoint_thread.start()
 
     for i, row in enumerate(rows):
         label = row.get("label") or ""
@@ -374,7 +388,7 @@ def run_eval(
         print("  Socratic Score (14B): N/A (no parseable scores)")
 
     if output_json:
-        save_checkpoint()
+        save_checkpoint(blocking=True)
         print(f"\nPer-sample results (all 4 dimensions) written to {output_json}")
 
 

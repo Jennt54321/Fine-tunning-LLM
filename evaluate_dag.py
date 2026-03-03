@@ -81,8 +81,8 @@ def parse_socratic_dag(text: str) -> SocraticDAG:
 
     for line in lines:
         # Check if this is the terminal line
-        if re.search(r"#{3,4}\s*", line):
-            after_hash = re.split(r"#{3,4}\s*", line, maxsplit=1)
+        if _HASH_SEP.search(line):
+            after_hash = _HASH_SEP.split(line, maxsplit=1)
             answer_part = after_hash[-1].strip() if len(after_hash) > 1 else ""
             dag.terminal = TerminalNode(
                 text=line,
@@ -160,16 +160,13 @@ def compare_dags(pred_dag: SocraticDAG, label_dag: SocraticDAG) -> dict:
     # structural_similarity: positional alignment of step attributes
     if pred_n > 0 and label_n > 0:
         aligned_len = max(pred_n, label_n)
-        # Pad shorter list by repeating last step
-        pred_steps = list(pred_dag.steps)
-        label_steps = list(label_dag.steps)
-        while len(pred_steps) < aligned_len:
-            pred_steps.append(pred_steps[-1])
-        while len(label_steps) < aligned_len:
-            label_steps.append(label_steps[-1])
+        pred_steps = pred_dag.steps
+        label_steps = label_dag.steps
 
         pos_scores = []
-        for p, l in zip(pred_steps, label_steps):
+        for i in range(aligned_len):
+            p = pred_steps[min(i, pred_n - 1)]
+            l = label_steps[min(i, label_n - 1)]
             matches = sum(
                 getattr(p, attr) == getattr(l, attr) for attr in _STEP_ATTRS
             )

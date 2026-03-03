@@ -137,49 +137,90 @@ def compute_bertscore_batch(
         _score_mod.get_tokenizer = _original_get_tokenizer
 
 
-def compute_step_level_bertscore(
-    pred_text: str,
-    label_text: str,
+def _pad_steps(pred_steps: list[str], label_steps: list[str]) -> tuple[list[str], list[str]]:
+    """Pad shorter list by repeating last step. Returns (padded_pred, padded_label)."""
+    max_len = max(len(pred_steps), len(label_steps))
+    pred_padded = list(pred_steps)
+    label_padded = list(label_steps)
+    while len(pred_padded) < max_len:
+        pred_padded.append(pred_padded[-1])
+    while len(label_padded) < max_len:
+        label_padded.append(label_padded[-1])
+    return pred_padded, label_padded
+
+
+def compute_step_level_bertscore_batched(
+    preds: list[str],
+    refs: list[str],
     model_type: str,
     device: str,
     batch_size: int,
-) -> dict:
-    """Split into steps, pad shorter list, batch-compute BERTScore, return per-step scores + mean."""
-    pred_steps = split_into_steps(pred_text)
-    label_steps = split_into_steps(label_text)
+) -> list[dict]:
+    """Batch-compute step-level BERTScore across all samples. Returns list of per-sample dicts."""
+    all_pred_steps: list[str] = []
+    all_ref_steps: list[str] = []
+    sample_info: list[tuple[int, int, int, int]] = []  # (start, end, n_pred, n_label)
 
-    if not pred_steps or not label_steps:
-        return {
-            "n_pred_steps": len(pred_steps),
-            "n_label_steps": len(label_steps),
-            "step_scores": [],
-            "step_f1_mean": 0.0,
-        }
+    for pred_text, ref_text in zip(preds, refs):
+        pred_steps = split_into_steps(pred_text)
+        label_steps = split_into_steps(ref_text)
+        n_pred = len(pred_steps)
+        n_label = len(label_steps)
 
-    # Pad shorter list by repeating last step
-    max_len = max(len(pred_steps), len(label_steps))
-    while len(pred_steps) < max_len:
-        pred_steps.append(pred_steps[-1])
-    while len(label_steps) < max_len:
-        label_steps.append(label_steps[-1])
+        if not pred_steps or not label_steps:
+            sample_info.append((-1, -1, n_pred, n_label))
+            continue
 
-    P, R, F1 = compute_bertscore_batch(pred_steps, label_steps, model_type, device, batch_size)
+        pred_padded, label_padded = _pad_steps(pred_steps, label_steps)
+        start = len(all_pred_steps)
+        all_pred_steps.extend(pred_padded)
+        all_ref_steps.extend(label_padded)
+        sample_info.append((start, len(all_pred_steps), n_pred, n_label))
 
-    step_scores = []
-    for i in range(max_len):
-        step_scores.append({
-            "step": i,
-            "precision": round(P[i], 4),
-            "recall": round(R[i], 4),
-            "f1": round(F1[i], 4),
+    if not all_pred_steps:
+        return [
+            {
+                "n_pred_steps": info[2],
+                "n_label_steps": info[3],
+                "step_scores": [],
+                "step_f1_mean": 0.0,
+            }
+            for info in sample_info
+        ]
+
+    P, R, F1 = compute_bertscore_batch(
+        all_pred_steps, all_ref_steps, model_type, device, batch_size
+    )
+
+    step_results = []
+    for info in sample_info:
+        start, end, n_pred, n_label = info
+        if start < 0:
+            step_results.append({
+                "n_pred_steps": n_pred,
+                "n_label_steps": n_label,
+                "step_scores": [],
+                "step_f1_mean": 0.0,
+            })
+            continue
+        step_scores = [
+            {
+                "step": j,
+                "precision": round(P[start + j], 4),
+                "recall": round(R[start + j], 4),
+                "f1": round(F1[start + j], 4),
+            }
+            for j in range(end - start)
+        ]
+        f1_slice = F1[start:end]
+        step_results.append({
+            "n_pred_steps": n_pred,
+            "n_label_steps": n_label,
+            "step_scores": step_scores,
+            "step_f1_mean": round(statistics.mean(f1_slice), 4),
         })
 
-    return {
-        "n_pred_steps": len(split_into_steps(pred_text)),  # original count
-        "n_label_steps": len(split_into_steps(label_text)),
-        "step_scores": step_scores,
-        "step_f1_mean": round(statistics.mean(F1), 4),
-    }
+    return step_results
 
 
 def evaluate(
@@ -214,48 +255,39 @@ def evaluate(
     print(f"Samples: {n}")
     print()
 
-    # Preprocess
+    # Preprocess and track indices with originally empty pred/ref (for score zeroing)
     preds = []
     refs = []
     valid_rows = []
+    empty_score_indices: set[int] = set()
     for row in rows:
         pred = row.get("predict") or ""
         label = row.get("label") or ""
         pred_proc = truncate_for_bertscore(preprocess_text(pred, strip_markers=strip_markers))
         label_proc = truncate_for_bertscore(preprocess_text(label, strip_markers=strip_markers))
-        preds.append(pred_proc)
-        refs.append(label_proc)
+        if not pred_proc or not label_proc:
+            empty_score_indices.add(len(preds))
+        preds.append(pred_proc if pred_proc else " ")
+        refs.append(label_proc if label_proc else " ")
         valid_rows.append(row)
-
-    # Handle empty texts: replace with placeholder so BERTScore doesn't error
-    for i in range(len(preds)):
-        if not preds[i]:
-            preds[i] = " "
-        if not refs[i]:
-            refs[i] = " "
 
     # Compute sample-level BERTScore
     print("Computing BERTScore...")
     P, R, F1 = compute_bertscore_batch(preds, refs, model_type, device, batch_size)
 
-    # Set scores to 0.0 for originally empty texts
-    for i in range(len(valid_rows)):
-        orig_pred = preprocess_text(valid_rows[i].get("predict") or "", strip_markers=strip_markers)
-        orig_ref = preprocess_text(valid_rows[i].get("label") or "", strip_markers=strip_markers)
-        if not orig_pred or not orig_ref:
-            P[i] = 0.0
-            R[i] = 0.0
-            F1[i] = 0.0
+    # Set scores to 0.0 for originally empty texts (use precomputed indices)
+    for i in empty_score_indices:
+        P[i] = 0.0
+        R[i] = 0.0
+        F1[i] = 0.0
 
-    # Step-level (optional)
+    # Step-level (optional) - single batched call instead of N separate calls
     step_results = []
     if step_level:
         print("Computing step-level BERTScore...")
-        for i in range(len(valid_rows)):
-            step_res = compute_step_level_bertscore(
-                preds[i], refs[i], model_type, device, batch_size
-            )
-            step_results.append(step_res)
+        step_results = compute_step_level_bertscore_batched(
+            preds, refs, model_type, device, batch_size
+        )
 
     # Build per-sample records
     per_sample = []
