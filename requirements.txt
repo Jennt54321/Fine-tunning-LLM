@@ -1,0 +1,12 @@
+# Evaluation dependencies
+# - BERTScore (evaluate_bert.py, evaluate_dag.py): bert-score
+# - Qwen 14B evaluator (evaluate_with_qwen14b.py): transformers, bitsandbytes
+
+bert-score>=0.3.13
+transformers>=4.37.0
+torch
+bitsandbytes
+
+# Optional, Apple Silicon only (--backend mlx):
+# mlx
+# mlx-lm
