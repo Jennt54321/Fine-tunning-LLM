@@ -8,11 +8,14 @@ Defaults: Colab paths (repo /content/Fine-tunning-LLM, outputs /content/drive/My
 For local: set SOCRATIC_REPO_ROOT=auto and SOCRATIC_OUTPUT_DIR=/path/to/outputs (or leave OUTPUT_DIR to use Drive path if you mount it).
 
 Usage (from repo root, e.g. /content/Fine-tunning-LLM in Colab):
-  python scripts/run_vllm_predict.py [promptonly|finetuned|both]
+  python scripts/run_vllm_predict.py [promptonly|finetuned|both] [--max_samples N]
+  # Quick test with 3 samples:
+  python scripts/run_vllm_predict.py both --max_samples 3
 
 Requires: pip install vllm, and run from an environment where LLaMA-Factory is
 installed (e.g. pip install -e ./LLaMA-Factory from repo root).
 """
+import argparse
 import os
 import subprocess
 import sys
@@ -40,7 +43,7 @@ CUTOFF_LEN = 2048
 TEMPERATURE = 0  # greedy (match do_sample: false in yaml)
 
 
-def _run(mode: str) -> int:
+def _run(mode: str, max_samples: int | None = None) -> int:
     os.makedirs(os.path.dirname(PROMPTONLY_SAVE), exist_ok=True)
     os.makedirs(os.path.dirname(FINETUNED_SAVE), exist_ok=True)
 
@@ -54,6 +57,8 @@ def _run(mode: str) -> int:
         "--cutoff_len", str(CUTOFF_LEN),
         "--temperature", str(TEMPERATURE),
     ]
+    if max_samples is not None:
+        cmd_base += ["--max_samples", str(max_samples)]
 
     if mode in ("promptonly", "both"):
         cmd = cmd_base + ["--save_name", PROMPTONLY_SAVE]
@@ -78,17 +83,29 @@ def _run(mode: str) -> int:
 
 
 def main():
-    mode = (sys.argv[1] if len(sys.argv) > 1 else "both").lower()
-    if mode not in ("promptonly", "finetuned", "both"):
-        print("Usage: python scripts/run_vllm_predict.py [promptonly|finetuned|both]", file=sys.stderr)
-        sys.exit(2)
+    parser = argparse.ArgumentParser(description="Run vllm_infer for Socratic eval (prompt-only and/or fine-tuned).")
+    parser.add_argument(
+        "mode",
+        nargs="?",
+        default="both",
+        choices=("promptonly", "finetuned", "both"),
+        help="Which prediction to run",
+    )
+    parser.add_argument(
+        "--max_samples",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Limit to N samples (e.g. 3 for a quick test)",
+    )
+    args = parser.parse_args()
     if not os.path.isdir(LLAMA_FACTORY_DIR):
         print("LLaMA-Factory not found at", LLAMA_FACTORY_DIR, file=sys.stderr)
         sys.exit(1)
     if not os.path.isdir(DATA_DIR):
         print("Data dir not found:", DATA_DIR, file=sys.stderr)
         sys.exit(1)
-    sys.exit(_run(mode))
+    sys.exit(_run(args.mode, args.max_samples))
 
 
 if __name__ == "__main__":
