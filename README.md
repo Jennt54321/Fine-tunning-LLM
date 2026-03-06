@@ -28,8 +28,8 @@ GSM8K was designed to train models to *answer* math problems; its Socratic forma
 
 ```bash
 # Clone repo with submodule
-git clone --recursive https://github.com/YOUR_ORG/Fine-tunning-LLM.git
-cd Fine-tunning-LLM
+git clone --recursive https://github.com/YOUR_ORG/fine-tune-gsm8k-socratic.git
+cd fine-tune-gsm8k-socratic
 
 # Create venv and install deps
 python -m venv venv
@@ -93,7 +93,7 @@ Run from the project root.
 ## Project Structure
 
 ```
-Fine-tunning-LLM/
+fine-tune-gsm8k-socratic/
 ├── README.md
 ├── requirements.txt
 ├── socratic_train_config.yaml      # SFT config

@@ -4,10 +4,10 @@ Run LLaMA-Factory vllm_infer.py for Socratic eval (prompt-only and/or fine-tuned
 Produces the same generated_predictions.jsonl as Step 3 without using the trainer,
 so it avoids the batch_decode TypeError when saving predictions.
 
-Defaults: Colab paths (repo /content/Fine-tunning-LLM, outputs /content/drive/MyDrive/llm_outputs).
+Defaults: Colab paths (repo /content/fine-tune-gsm8k-socratic, outputs /content/drive/MyDrive/llm_outputs).
 For local: set SOCRATIC_REPO_ROOT=auto and SOCRATIC_OUTPUT_DIR=/path/to/outputs (or leave OUTPUT_DIR to use Drive path if you mount it).
 
-Usage (from repo root, e.g. /content/Fine-tunning-LLM in Colab):
+Usage (from repo root, e.g. /content/fine-tune-gsm8k-socratic in Colab):
   python scripts/run_vllm_predict.py [promptonly|finetuned|both] [--max_samples N]
   # Quick test with 3 samples:
   python scripts/run_vllm_predict.py both --max_samples 3
@@ -21,8 +21,8 @@ import subprocess
 import sys
 
 # Colab defaults (override with env for local)
-REPO_ROOT = os.environ.get("SOCRATIC_REPO_ROOT", "/content/Fine-tunning-LLM")
-if REPO_ROOT == "auto" or (REPO_ROOT == "/content/Fine-tunning-LLM" and not os.path.isdir(REPO_ROOT)):
+REPO_ROOT = os.environ.get("SOCRATIC_REPO_ROOT", "/content/fine-tune-gsm8k-socratic")
+if REPO_ROOT == "auto" or (REPO_ROOT == "/content/fine-tune-gsm8k-socratic" and not os.path.isdir(REPO_ROOT)):
     REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 DATA_DIR = os.environ.get("SOCRATIC_DATA_DIR", os.path.join(REPO_ROOT, "data", "custom"))
