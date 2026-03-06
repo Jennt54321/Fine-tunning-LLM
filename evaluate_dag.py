@@ -2,11 +2,17 @@
 """
 Structural DAG evaluation for GSM8K Socratic predictions.
 
-Models each Socratic response as a linear DAG (chain of step nodes + terminal node)
-and compares structural format between prediction and reference label.
+Evaluates prediction format only (no comparison to reference label). Checks that
+each prediction follows the requested Socratic format:
 
-Complements BERTScore (semantic) and rule-based (accuracy) evaluations by measuring
-how well the model reproduces the Socratic Q&A format structure.
+Format rules:
+  1. Each step: question ends with "?", response part starts with "**" (same line: "Question? ** Response").
+  2. If the response contains a calculation, it must be wrapped in <<expr=result>>; no calculation is fine.
+  3. Final answer line must start with "####".
+  4. Duplicate question: same question text (before "?") repeated across steps is penalized.
+  5. Duplicate answer: same response text (after "**") repeated across steps is penalized.
+
+Models each Socratic response as a linear DAG (chain of step nodes + terminal node).
 
 Usage:
   python evaluate_dag.py outputs/gsm8k_socratic_qwen_m3_eval_finetuned
@@ -31,13 +37,15 @@ from evaluate_bert import load_predictions
 
 @dataclass
 class StepNode:
-    """One Q&A line in the Socratic format."""
+    """One Q&A line in the Socratic format: Question? ** Response."""
     text: str
     has_question_mark: bool = False
     has_star_separator: bool = False
     has_expression: bool = False
     has_valid_expression: bool = False
+    has_calculation: bool = False  # True if response contains calculation-like content (then <<expr=result>> required)
     is_duplicate_question: bool = False
+    is_duplicate_answer: bool = False
 
 
 @dataclass
@@ -64,6 +72,29 @@ _EXPRESSION = re.compile(r"<<[^>]+>>")             # <<...>>
 _VALID_EXPRESSION = re.compile(r"<<[^=]+=[^>]+>>") # <<expr=result>>
 _HASH_SEP = re.compile(r"#{3,4}\s*")               # ### or ####
 _NUMERIC = re.compile(r"-?\d+\.?\d*")
+# Heuristic: response contains digits and an operator (calculation-like)
+_CALCULATION_LIKE = re.compile(r"\d+[\s]*[\+\-\*\/=][\s]*\d+|\d+[\s]*[\+\-\*\/=]|[\+\-\*\/=][\s]*\d+")
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _extract_response(line: str) -> str:
+    """Extract the response part (text after '**') from a step line. Returns normalized string for comparison."""
+    if "**" not in line:
+        return ""
+    parts = line.split("**", 1)
+    return parts[1].strip() if len(parts) > 1 else ""
+
+
+def _has_calculation_like_content(response: str) -> bool:
+    """True if response contains something that looks like a calculation (digits + operator)."""
+    if not response:
+        return False
+    # Remove <<...>> so we don't double-count; check the rest for raw arithmetic
+    without_angle = re.sub(r"<<[^>]+>>", "", response)
+    return bool(_CALCULATION_LIKE.search(without_angle))
 
 
 # ---------------------------------------------------------------------------
@@ -78,9 +109,10 @@ def parse_socratic_dag(text: str) -> SocraticDAG:
 
     lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
     seen_questions: set[str] = set()
+    seen_answers: set[str] = set()
 
     for line in lines:
-        # Check if this is the terminal line
+        # Check if this is the terminal line (must start with ####)
         if _HASH_SEP.search(line):
             after_hash = _HASH_SEP.split(line, maxsplit=1)
             answer_part = after_hash[-1].strip() if len(after_hash) > 1 else ""
@@ -91,18 +123,23 @@ def parse_socratic_dag(text: str) -> SocraticDAG:
             )
             continue
 
-        # Otherwise it's a step node
+        # Otherwise it's a step node: Question? ** Response
         has_q = "?" in line
-        # Extract question text (everything before ?) for duplicate detection
         q_text = ""
         if has_q:
             q_text = line.split("?")[0].strip().lower()
 
-        is_dup = False
+        is_dup_q = bool(q_text and q_text in seen_questions)
         if q_text:
-            if q_text in seen_questions:
-                is_dup = True
             seen_questions.add(q_text)
+
+        response_text = _extract_response(line)
+        response_key = response_text.lower().strip() if response_text else ""
+        is_dup_a = bool(response_key and response_key in seen_answers)
+        if response_key:
+            seen_answers.add(response_key)
+
+        has_calc = _has_calculation_like_content(response_text)
 
         node = StepNode(
             text=line,
@@ -110,7 +147,9 @@ def parse_socratic_dag(text: str) -> SocraticDAG:
             has_star_separator=bool(_STAR_SEP.search(line)),
             has_expression=bool(_EXPRESSION.search(line)),
             has_valid_expression=bool(_VALID_EXPRESSION.search(line)),
-            is_duplicate_question=is_dup,
+            has_calculation=has_calc,
+            is_duplicate_question=is_dup_q,
+            is_duplicate_answer=is_dup_a,
         )
         dag.steps.append(node)
 
@@ -121,34 +160,20 @@ def parse_socratic_dag(text: str) -> SocraticDAG:
 # Comparison
 # ---------------------------------------------------------------------------
 
-_STEP_ATTRS = [
-    "has_question_mark",
-    "has_star_separator",
-    "has_expression",
-    "has_valid_expression",
-]
-
 
 def _step_format_score(step: StepNode) -> float:
-    """Fraction of boolean attributes that are True for a single step."""
-    vals = [getattr(step, attr) for attr in _STEP_ATTRS]
-    return sum(vals) / len(vals)
+    """Format score: question ?, response **, and if calculation present then <<expr=result>> required."""
+    q = 1.0 if step.has_question_mark else 0.0
+    star = 1.0 if step.has_star_separator else 0.0
+    expr = 1.0 if step.has_expression else 0.0
+    # Only require valid <<expr=result>> when response contains calculation-like content
+    effective_valid_expr = 1.0 if (step.has_valid_expression or not step.has_calculation) else 0.0
+    return (q + star + expr + effective_valid_expr) / 4.0
 
 
-def compare_dags(pred_dag: SocraticDAG, label_dag: SocraticDAG) -> dict:
-    """Compare prediction DAG against label DAG, returning all metrics."""
+def compare_dags(pred_dag: SocraticDAG) -> dict:
+    """Evaluate format compliance of pred_dag only. Returns format/duplicate/terminal metrics and a composite score."""
     pred_n = len(pred_dag.steps)
-    label_n = len(label_dag.steps)
-    max_n = max(pred_n, label_n, 1)
-
-    # step_count_ratio
-    step_count_ratio = min(pred_n, label_n, 1) / max_n if max_n > 0 else 0.0
-    # Use actual counts (not clamped to 1) when both are nonzero
-    if pred_n > 0 and label_n > 0:
-        step_count_ratio = min(pred_n, label_n) / max(pred_n, label_n)
-
-    # newline_separation_score (same formula, explicit name)
-    newline_separation_score = step_count_ratio
 
     # format_score_mean: average format score across prediction steps
     if pred_dag.steps:
@@ -157,50 +182,35 @@ def compare_dags(pred_dag: SocraticDAG, label_dag: SocraticDAG) -> dict:
     else:
         format_score_mean = 0.0
 
-    # structural_similarity: positional alignment of step attributes
-    if pred_n > 0 and label_n > 0:
-        aligned_len = max(pred_n, label_n)
-        pred_steps = pred_dag.steps
-        label_steps = label_dag.steps
-
-        pos_scores = []
-        for i in range(aligned_len):
-            p = pred_steps[min(i, pred_n - 1)]
-            l = label_steps[min(i, label_n - 1)]
-            matches = sum(
-                getattr(p, attr) == getattr(l, attr) for attr in _STEP_ATTRS
-            )
-            pos_scores.append(matches / len(_STEP_ATTRS))
-        structural_similarity = statistics.mean(pos_scores)
-    else:
-        structural_similarity = 0.0
-
     # duplicate_question_ratio
     if pred_dag.steps:
-        dup_count = sum(1 for s in pred_dag.steps if s.is_duplicate_question)
-        duplicate_question_ratio = dup_count / len(pred_dag.steps)
+        dup_q_count = sum(1 for s in pred_dag.steps if s.is_duplicate_question)
+        duplicate_question_ratio = dup_q_count / len(pred_dag.steps)
     else:
         duplicate_question_ratio = 0.0
 
-    # terminal_present
+    # duplicate_answer_ratio
+    if pred_dag.steps:
+        dup_a_count = sum(1 for s in pred_dag.steps if s.is_duplicate_answer)
+        duplicate_answer_ratio = dup_a_count / len(pred_dag.steps)
+    else:
+        duplicate_answer_ratio = 0.0
+
+    # terminal_present (final answer must start with ####)
     terminal_present = pred_dag.terminal is not None and pred_dag.terminal.has_hash_separator
 
-    # dag_similarity (weighted composite)
+    # dag_similarity (weighted composite; prediction-only)
     dag_similarity = (
-        0.30 * step_count_ratio
-        + 0.30 * format_score_mean
-        + 0.25 * structural_similarity
-        + 0.15 * (1.0 - duplicate_question_ratio)
+        0.80 * format_score_mean
+        + 0.10 * (1.0 - duplicate_question_ratio)
+        + 0.10 * (1.0 - duplicate_answer_ratio)
     )
 
     return {
         "pred_step_count": pred_n,
-        "label_step_count": label_n,
-        "step_count_ratio": round(step_count_ratio, 4),
-        "newline_separation_score": round(newline_separation_score, 4),
         "format_score_mean": round(format_score_mean, 4),
-        "structural_similarity": round(structural_similarity, 4),
         "duplicate_question_ratio": round(duplicate_question_ratio, 4),
+        "duplicate_answer_ratio": round(duplicate_answer_ratio, 4),
         "terminal_present": terminal_present,
         "dag_similarity": round(dag_similarity, 4),
     }
@@ -233,27 +243,23 @@ def evaluate(
     per_sample = []
     for i, row in enumerate(rows):
         pred_text = row.get("predict") or ""
-        label_text = row.get("label") or ""
 
         pred_dag = parse_socratic_dag(pred_text)
-        label_dag = parse_socratic_dag(label_text)
-        metrics = compare_dags(pred_dag, label_dag)
+        metrics = compare_dags(pred_dag)
 
         rec = {"index": i, **metrics}
         if verbose:
             rec["predict"] = pred_text
-            rec["label"] = label_text
+            rec["label"] = row.get("label") or ""
         per_sample.append(rec)
 
     # Aggregate summary
     summary = {}
     if per_sample:
         for key in [
-            "step_count_ratio",
-            "newline_separation_score",
             "format_score_mean",
-            "structural_similarity",
             "duplicate_question_ratio",
+            "duplicate_answer_ratio",
             "dag_similarity",
         ]:
             vals = [r[key] for r in per_sample]
@@ -269,11 +275,9 @@ def evaluate(
     # Print summary
     print("[DAG Structural Evaluation]")
     if summary:
-        print(f"  Step count ratio:        {summary['step_count_ratio_mean']:.4f} ± {summary['step_count_ratio_std']:.4f}")
-        print(f"  Newline separation:      {summary['newline_separation_score_mean']:.4f} ± {summary['newline_separation_score_std']:.4f}")
         print(f"  Format score:            {summary['format_score_mean_mean']:.4f} ± {summary['format_score_mean_std']:.4f}")
-        print(f"  Structural similarity:   {summary['structural_similarity_mean']:.4f} ± {summary['structural_similarity_std']:.4f}")
         print(f"  Duplicate question ratio: {summary['duplicate_question_ratio_mean']:.4f} ± {summary['duplicate_question_ratio_std']:.4f}")
+        print(f"  Duplicate answer ratio:  {summary['duplicate_answer_ratio_mean']:.4f} ± {summary['duplicate_answer_ratio_std']:.4f}")
         print(f"  DAG similarity:          {summary['dag_similarity_mean']:.4f} ± {summary['dag_similarity_std']:.4f}")
         print(f"  Terminal present:        {summary['terminal_present_pct']:.1f}%")
     else:
@@ -283,9 +287,9 @@ def evaluate(
         print("\n[Per-sample details]")
         for rec in per_sample:
             print(
-                f"  #{rec['index']}: steps={rec['pred_step_count']}/{rec['label_step_count']} "
-                f"fmt={rec['format_score_mean']:.4f} struct={rec['structural_similarity']:.4f} "
-                f"dag={rec['dag_similarity']:.4f} dup={rec['duplicate_question_ratio']:.4f} "
+                f"  #{rec['index']}: steps={rec['pred_step_count']} "
+                f"fmt={rec['format_score_mean']:.4f} "
+                f"dag={rec['dag_similarity']:.4f} dup_q={rec['duplicate_question_ratio']:.4f} dup_a={rec['duplicate_answer_ratio']:.4f} "
                 f"terminal={'Y' if rec['terminal_present'] else 'N'}"
             )
 
