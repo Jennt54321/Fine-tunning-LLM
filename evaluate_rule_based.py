@@ -29,6 +29,7 @@ import argparse
 import json
 import os
 import re
+from collections import Counter
 
 
 # Precompiled regex for answer extraction (avoid rebuilding in loop)
@@ -145,6 +146,7 @@ def evaluate(predictions_path: str, verbose: bool = False, output_json: str | No
     missing_pred = 0
     missing_label = 0
     per_sample: list[dict] = []
+    extraction_method_counts: Counter[str] = Counter()
 
     with open(predictions_path, "r", encoding="utf-8") as f:
         for idx, line in enumerate(f):
@@ -170,6 +172,7 @@ def evaluate(predictions_path: str, verbose: bool = False, output_json: str | No
             else:
                 if gt_norm == ans_norm:
                     correct += 1
+            extraction_method_counts[ans_method] += 1
             rec = {
                 "index": idx,
                 "gt": gt,
@@ -190,6 +193,14 @@ def evaluate(predictions_path: str, verbose: bool = False, output_json: str | No
     if missing_pred:
         print(f"Could not extract answer from model output: {missing_pred}")
     print()
+
+    # Answer extraction method distribution (the 4 strategies in extract_gsm8k_answer)
+    if extraction_method_counts:
+        print("Answer extraction method distribution:")
+        for method, count in extraction_method_counts.most_common():
+            pct = 100.0 * count / total if total else 0
+            print(f"  {method}: {count} ({pct:.1f}%)")
+        print()
 
     if total:
         acc = 100.0 * correct / total
