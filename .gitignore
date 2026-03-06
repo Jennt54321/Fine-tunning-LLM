@@ -22,5 +22,20 @@ __pycache__/
 .idea/
 .vscode/
 
+# Environment & secrets
+.env
+.env.local
+.env.*
+!.env.example
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Logs
+*.log
+
 # Optional: if data files are large, consider Git LFS or exclude
 # data/custom/*.jsonl
+
+# LLaMA-Factory env (may contain filled-in secrets)
+LLaMA-Factory/.env.local
