@@ -12,7 +12,7 @@ import os
 from datasets import load_dataset
 from tqdm import tqdm
 
-# 與 Socratic Format Adherence 對齊：Question? ** Answer with <<expr=result>>，每步一行，#### 結尾
+# 與 Socratic / DAG 格式對齊：Question? ** Answer with <<expr=result>>，每步一行，#### 結尾
 SOCRATIC_INSTRUCTION = (
     "Use socratic questions to guide through the problem. "
     "Format: each step on its own line as 'Question? ** Answer with <<expr=result>>'. "
